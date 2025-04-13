@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.Taskmanager" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Splash screen theme for Android versions below 12 -->
+    <style name="Theme.Taskmanager.SplashScreen" parent="Theme.Taskmanager">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>
