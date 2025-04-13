@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface UserRepository {
     fun getCurrentUser(): Flow<User?>
+    fun isUserAuthenticated(): Boolean
     suspend fun signIn(email: String, password: String): Result<User>
     suspend fun signInWithGoogle(idToken: String): Result<User>
     suspend fun signUp(email: String, password: String, displayName: String): Result<User>
@@ -23,5 +24,5 @@ interface UserRepository {
     suspend fun syncRemoteProjectsToLocal(projectDtos: List<ProjectDto>)
     suspend fun syncRemoteTasksToLocal(taskDtos: List<TaskDto>)
     suspend fun syncRemoteInvitationsToLocal(projectInvitationDtos: List<ProjectInvitationDto>)
-suspend fun syncRemoteMembersToLocal(projectMemberDtos: List<ProjectMemberDto>)
+    suspend fun syncRemoteMembersToLocal(projectMemberDtos: List<ProjectMemberDto>)
 }

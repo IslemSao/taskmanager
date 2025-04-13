@@ -2,7 +2,7 @@ package com.example.taskmanager.presentation.authentication.signup
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.taskmanager.domain.repository.UserRepository
+import com.example.taskmanager.domain.usecase.auth.SignUpUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,7 +11,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SignUpViewModel @Inject constructor(
-    private val userRepository: UserRepository
+    private val signUpUseCase: SignUpUseCase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SignUpState())
@@ -66,7 +66,7 @@ class SignUpViewModel @Inject constructor(
         )
 
         viewModelScope.launch {
-            val result = userRepository.signUp(
+            val result = signUpUseCase(
                 email = currentState.email,
                 password = currentState.password,
                 displayName = currentState.displayName

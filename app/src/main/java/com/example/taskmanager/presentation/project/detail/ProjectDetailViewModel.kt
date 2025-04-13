@@ -6,12 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.example.taskmanager.domain.model.Project
 import com.example.taskmanager.domain.model.ProjectMember
 import com.example.taskmanager.domain.model.User
-import com.example.taskmanager.domain.repository.UserRepository
-import com.example.taskmanager.domain.usecase.project.InviteProjectMemberUseCase
-import com.example.taskmanager.domain.usecase.project.RemoveProjectMemberUseCase
 import com.example.taskmanager.domain.usecase.project.CreateProjectUseCase
 import com.example.taskmanager.domain.usecase.project.GetProjectByIdUseCase
+import com.example.taskmanager.domain.usecase.project.InviteProjectMemberUseCase
+import com.example.taskmanager.domain.usecase.project.RemoveProjectMemberUseCase
 import com.example.taskmanager.domain.usecase.project.UpdateProjectUseCase
+import com.example.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -25,7 +25,7 @@ class ProjectDetailViewModel @Inject constructor(
     private val updateProjectUseCase: UpdateProjectUseCase,
     private val inviteMemberUseCase: InviteProjectMemberUseCase,
     private val removeMemberUseCase: RemoveProjectMemberUseCase,
-    private val userRepository: UserRepository
+    private val getCurrentUserUseCase: GetCurrentUserUseCase
 ) : ViewModel() {
 
     data class ProjectDetailState(
@@ -47,7 +47,7 @@ class ProjectDetailViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            userRepository.getCurrentUser().collect { user ->
+            getCurrentUserUseCase().collect { user ->
                 _state.update { it.copy(currentUser = user) }
             }
         }

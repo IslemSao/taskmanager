@@ -10,21 +10,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.lifecycle.lifecycleScope
-import com.example.taskmanager.presentation.authentication.signin.SignInViewModel
+import com.example.taskmanager.presentation.authentication.AuthViewModel
 import com.example.taskmanager.presentation.navigation.AppNavGraph
 import com.example.taskmanager.presentation.navigation.Screen
 import com.example.taskmanager.ui.theme.TaskmanagerTheme
-import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-    @Inject
-    lateinit var firebaseAuth: FirebaseAuth
+    private val authViewModel: AuthViewModel by viewModels()
     
     // Flag to track if authentication check is complete
     private var isAuthReady = false
@@ -46,11 +40,10 @@ class MainActivity : ComponentActivity() {
     }
     
     private fun checkAuthStateAndSetRoute() {
-        // Check Firebase Auth directly instead of using ViewModel
-        val currentUser = firebaseAuth.currentUser
-        val isAuthenticated = currentUser != null
+        // Check auth state using ViewModel with UseCase
+        val isAuthenticated = authViewModel.isUserAuthenticated()
         
-        Log.d("MainActivity", "Direct Firebase Auth check - User is authenticated: $isAuthenticated")
+        Log.d("MainActivity", "Auth check using ViewModel and UseCase - User is authenticated: $isAuthenticated")
         
         // Set the start destination based on authentication state
         startDestination = if (isAuthenticated) {

@@ -9,9 +9,9 @@ class RemoveProjectMemberUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(projectId: String, userId: String): Result<Unit> {
         if (projectId.isBlank() || userId.isBlank()) {
-            return Result.failure(Exception("Project ID and User ID cannot be empty"))
+            return Result.failure(IllegalArgumentException("Project ID and User ID cannot be empty"))
         }
-
-        return projectRepository.removeMemberFromProject(projectId, userId)
+        
+        return projectRepository.removeProjectMember(projectId, userId)
     }
 }

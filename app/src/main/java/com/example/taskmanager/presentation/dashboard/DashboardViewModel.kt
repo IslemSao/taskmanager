@@ -11,10 +11,18 @@ import com.example.taskmanager.data.remote.dto.ProjectMemberDto
 import com.example.taskmanager.data.remote.dto.TaskDto
 import com.example.taskmanager.domain.model.Project
 import com.example.taskmanager.domain.model.Task
-import com.example.taskmanager.domain.repository.UserRepository
+import com.example.taskmanager.domain.usecase.auth.SignOutUseCase
 import com.example.taskmanager.domain.usecase.project.GetProjectsUseCase
+import com.example.taskmanager.domain.usecase.remote.ListenToRemoteInvitationsUseCase
+import com.example.taskmanager.domain.usecase.remote.ListenToRemoteProjectsUseCase
+import com.example.taskmanager.domain.usecase.remote.ListenToRemoteTasksUseCase
+import com.example.taskmanager.domain.usecase.sync.SyncRemoteInvitationsToLocalUseCase
+import com.example.taskmanager.domain.usecase.sync.SyncRemoteMembersToLocalUseCase
+import com.example.taskmanager.domain.usecase.sync.SyncRemoteProjectsToLocalUseCase
+import com.example.taskmanager.domain.usecase.sync.SyncRemoteTasksToLocalUseCase
 import com.example.taskmanager.domain.usecase.task.GetTasksUseCase
 import com.example.taskmanager.domain.usecase.task.ToggleTaskComplitionUseCase
+import com.example.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -28,8 +36,16 @@ import java.util.concurrent.atomic.AtomicBoolean // For thread-safe boolean chec
 class DashboardViewModel @Inject constructor(
     private val getLocalTasksUseCase: GetTasksUseCase,
     private val getLocalProjectsUseCase: GetProjectsUseCase,
-    private val toggleTaskComplitionUseCae: ToggleTaskComplitionUseCase,
-    private val userRepository: UserRepository,
+    private val toggleTaskComplitionUseCase: ToggleTaskComplitionUseCase,
+    private val signOutUseCase: SignOutUseCase,
+    private val getCurrentUserUseCase: GetCurrentUserUseCase,
+    private val listenToRemoteProjectsUseCase: ListenToRemoteProjectsUseCase,
+    private val listenToRemoteTasksUseCase: ListenToRemoteTasksUseCase,
+    private val listenToRemoteInvitationsUseCase: ListenToRemoteInvitationsUseCase, 
+    private val syncRemoteProjectsToLocalUseCase: SyncRemoteProjectsToLocalUseCase,
+    private val syncRemoteMembersToLocalUseCase: SyncRemoteMembersToLocalUseCase,
+    private val syncRemoteTasksToLocalUseCase: SyncRemoteTasksToLocalUseCase,
+    private val syncRemoteInvitationsToLocalUseCase: SyncRemoteInvitationsToLocalUseCase,
     private val application: Application
 ) : ViewModel() {
 
@@ -43,7 +59,7 @@ class DashboardViewModel @Inject constructor(
     val state: StateFlow<DashboardState> = combine(
         getLocalTasksUseCase(),      // Flow<List<Task>> from Room
         getLocalProjectsUseCase(),     // Flow<List<Project>> from Room
-        userRepository.getCurrentUser().distinctUntilChanged(), // Flow<User?>
+        getCurrentUserUseCase().distinctUntilChanged(), // Flow<User?>
         _isLoading,                  // Flow<Boolean>
         _error                       // Flow<String?>
     ) { tasks, projects, user, isLoading, error ->
@@ -86,7 +102,7 @@ class DashboardViewModel @Inject constructor(
 
     fun toggleTaskCompletion(task: Task) {
         (application as MainApplication).applicationScope.launch {
-            val result = toggleTaskComplitionUseCae(task)
+            val result = toggleTaskComplitionUseCase(task)
             if (result.isFailure) {
                 Log.e("DashboardVM", "Failed to toggle task completion", result.exceptionOrNull())
                 _error.value =
@@ -98,7 +114,7 @@ class DashboardViewModel @Inject constructor(
 
     private fun observeAuthenticationAndTriggerSync() {
         (application as MainApplication).applicationScope.launch {
-            userRepository.getCurrentUser()
+            getCurrentUserUseCase()
                 .distinctUntilChanged() // Prevent reacting to the same user object emission
                 .collect { user ->
                     // Cancel previous listener job AND reset sync flags when auth changes
@@ -136,15 +152,15 @@ class DashboardViewModel @Inject constructor(
             try {
                 // 2. MAP each flow to the sealed type THEN merge
                 merge(
-                    userRepository.listenToRemoteProjects()
+                    listenToRemoteProjectsUseCase()
                         .map { result ->
                             result.map { (projects, members) ->
                                 ListenerDataResult.ProjectsResult(projects, members)
                             }
                         },
-                    userRepository.listenToRemoteTasks()
+                    listenToRemoteTasksUseCase()
                         .map { result -> result.map { ListenerDataResult.TasksResult(it) } },
-                    userRepository.listenToRemoteInvitations()
+                    listenToRemoteInvitationsUseCase()
                         .map { result -> result.map { ListenerDataResult.InvitationsResult(it) } }
                 )
                     .collect { result: Result<ListenerDataResult> ->
@@ -160,8 +176,8 @@ class DashboardViewModel @Inject constructor(
                                         "DashboardVM",
                                         "Listener Flow: Received ${projects.size} Projects and ${members.size} Members."
                                     )
-                                    userRepository.syncRemoteProjectsToLocal(projects)
-                                    userRepository.syncRemoteMembersToLocal(members)
+                                    syncRemoteProjectsToLocalUseCase(projects)
+                                    syncRemoteMembersToLocalUseCase(members)
                                     initialProjectsReceived.set(true)
                                     dataTypeProcessed = "Projects & Members"
                                 }
@@ -173,7 +189,7 @@ class DashboardViewModel @Inject constructor(
                                         "DashboardVM",
                                         "Listener Flow: Received ${tasks.size} Tasks."
                                     )
-                                    userRepository.syncRemoteTasksToLocal(tasks)
+                                    syncRemoteTasksToLocalUseCase(tasks)
                                     initialTasksReceived.set(true)
                                     dataTypeProcessed = "Tasks"
                                 }
@@ -184,7 +200,7 @@ class DashboardViewModel @Inject constructor(
                                         "DashboardVM",
                                         "Listener Flow: Received ${invitations.size} Invitations."
                                     )
-                                    userRepository.syncRemoteInvitationsToLocal(invitations)
+                                    syncRemoteInvitationsToLocalUseCase(invitations)
                                     initialInvitationsReceived.set(true)
                                     dataTypeProcessed = "Invitations"
                                 }
@@ -257,8 +273,7 @@ class DashboardViewModel @Inject constructor(
         (application as MainApplication).applicationScope.launch {
             listenerSyncJob?.cancel("Signing out") // Cancel listener before sign out
             Log.d("DashboardVM", "Signing out user...")
-            val result =
-                userRepository.signOut() // Clears local DB, triggers auth observer -> null user
+            val result = signOutUseCase() // Use the SignOutUseCase
             if (result.isFailure) {
                 Log.e("DashboardVM", "Sign out failed", result.exceptionOrNull())
                 _error.value = result.exceptionOrNull()?.localizedMessage ?: "Failed to sign out"
