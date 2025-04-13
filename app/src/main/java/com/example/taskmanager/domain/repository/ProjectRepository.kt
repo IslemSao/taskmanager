@@ -20,4 +20,7 @@ interface ProjectRepository {
     suspend fun removeMemberFromProject(projectId: String, userId: String): Result<Unit>
 
     suspend fun getProjectMembers(): Flow<List<ProjectMember>>
+
+    suspend fun inviteProjectMember(projectId: String, projectTitle: String, userEmail: String): Result<Unit>
+    suspend fun removeProjectMember(projectId: String, userId: String): Result<Unit>
 }

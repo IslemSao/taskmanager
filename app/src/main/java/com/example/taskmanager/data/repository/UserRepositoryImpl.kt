@@ -37,7 +37,7 @@ class UserRepositoryImpl @Inject constructor(
     private val projectMemberDao: ProjectMemberDao, // Add DAO for project members
     private val firebaseUserSource: FirebaseUserSource,
 
-    ) : UserRepository {
+) : UserRepository {
 
     // --- Auth Methods (Remove fetchUserData call as done previously) ---
     override suspend fun signIn(email: String, password: String): Result<User> {
@@ -84,6 +84,10 @@ class UserRepositoryImpl @Inject constructor(
         return userDao.getCurrentUser().map { entity ->
             entity?.let { User(it.id, it.email, it.displayName, it.photoUrl) }
         }
+    }
+
+    override fun isUserAuthenticated(): Boolean {
+        return firebaseAuthSource.getCurrentUser() != null
     }
 
     // --- NEW Listener Flows Exposed by Repository ---

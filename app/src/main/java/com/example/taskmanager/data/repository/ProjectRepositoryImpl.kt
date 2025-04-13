@@ -407,4 +407,14 @@ class ProjectRepositoryImpl @Inject constructor(
             throw e
         }
     }
+
+    override suspend fun inviteProjectMember(projectId: String, projectTitle: String, userEmail: String): Result<Unit> {
+        // Reuse existing inviteUserToProject method but convert the result to Result<Unit>
+        return inviteUserToProject(projectId, projectTitle, userEmail).map { Unit }
+    }
+
+    override suspend fun removeProjectMember(projectId: String, userId: String): Result<Unit> {
+        // Reuse existing removeMemberFromProject method
+        return removeMemberFromProject(projectId, userId)
+    }
 }

@@ -2,7 +2,9 @@ package com.example.taskmanager.presentation.authentication.signin
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.taskmanager.domain.repository.UserRepository
+import com.example.taskmanager.domain.usecase.auth.SignInUseCase
+import com.example.taskmanager.domain.usecase.auth.SignInWithGoogleUseCase
+import com.example.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -14,13 +16,15 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SignInViewModel @Inject constructor(
-    private val userRepository: UserRepository
+    private val signInUseCase: SignInUseCase,
+    private val signInWithGoogleUseCase: SignInWithGoogleUseCase,
+    private val getCurrentUserUseCase: GetCurrentUserUseCase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SignInState())
     val state: StateFlow<SignInState> = _state
 
-    val isUserSignedIn = userRepository.getCurrentUser()
+    val isUserSignedIn = getCurrentUserUseCase()
         .map { it != null }
         .stateIn(
             scope = viewModelScope,
@@ -52,7 +56,7 @@ class SignInViewModel @Inject constructor(
         )
 
         viewModelScope.launch {
-            val result = userRepository.signIn(
+            val result = signInUseCase(
                 email = currentState.email,
                 password = currentState.password
             )
@@ -78,7 +82,7 @@ class SignInViewModel @Inject constructor(
         )
 
         viewModelScope.launch {
-            val result = userRepository.signInWithGoogle(idToken)
+            val result = signInWithGoogleUseCase(idToken)
 
             if (result.isSuccess) {
                 _state.value = _state.value.copy(
