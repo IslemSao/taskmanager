@@ -5,11 +5,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -26,6 +29,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -37,6 +41,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -81,12 +86,14 @@ fun TaskDetailScreen(
             navController.navigateUp()
         }
     }
-
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(if (state.isNewTask) "New Task" else "Edit Task")
+                    Text(
+                        if (state.isNewTask) "New Task" else "Edit Task",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
@@ -95,20 +102,30 @@ fun TaskDetailScreen(
                 },
                 actions = {
                     if (!state.isLoading && !state.isSaving) {
-                        IconButton(onClick = { viewModel.saveTask() }) {
+                        IconButton(
+                            onClick = { viewModel.saveTask() },
+                            colors = IconButtonDefaults.iconButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
                             Icon(Icons.Default.Done, contentDescription = "Save")
                         }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { padding ->
-        if (state.isLoading) {
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->        if (state.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .windowInsetsPadding(WindowInsets.systemBars),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
@@ -118,18 +135,20 @@ fun TaskDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(16.dp)
+                    .windowInsetsPadding(WindowInsets.systemBars)
+                    .padding(24.dp)
                     .verticalScroll(rememberScrollState())
             ) {
                 // Title field
                 OutlinedTextField(
                     value = state.task.title,
                     onValueChange = { viewModel.updateTitle(it) },
-                    label = { Text("Title") },
-                    modifier = Modifier.fillMaxWidth()
+                    label = { Text("Task Title") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // Description field
                 OutlinedTextField(
@@ -137,18 +156,20 @@ fun TaskDetailScreen(
                     onValueChange = { viewModel.updateDescription(it) },
                     label = { Text("Description") },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
+                    minLines = 4,
+                    shape = MaterialTheme.shapes.medium
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
                 // Priority selector
                 Text(
-                    text = "Priority",
-                    style = MaterialTheme.typography.titleMedium
+                    text = "Priority Level",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                     Priority.values().forEach { priority ->
@@ -158,22 +179,34 @@ fun TaskDetailScreen(
                             shape = SegmentedButtonDefaults.itemShape(
                                 index = priority.ordinal,
                                 count = Priority.values().size
+                            ),
+                            colors = SegmentedButtonDefaults.colors(
+                                activeContainerColor = when (priority) {
+                                    Priority.HIGH -> MaterialTheme.colorScheme.errorContainer
+                                    Priority.MEDIUM -> MaterialTheme.colorScheme.tertiaryContainer
+                                    Priority.LOW -> MaterialTheme.colorScheme.primaryContainer
+                                },
+                                activeContentColor = when (priority) {
+                                    Priority.HIGH -> MaterialTheme.colorScheme.onErrorContainer
+                                    Priority.MEDIUM -> MaterialTheme.colorScheme.onTertiaryContainer
+                                    Priority.LOW -> MaterialTheme.colorScheme.onPrimaryContainer
+                                }
                             )
                         ) {
                             Text(priority.name)
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
                 // Project selector
                 Text(
-                    text = "Project",
-                    style = MaterialTheme.typography.titleMedium
+                    text = "Assign to Project",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 var isProjectDropdownExpanded by remember { mutableStateOf(false) }
 
@@ -186,9 +219,11 @@ fun TaskDetailScreen(
                         value = state.availableProjects.find { it.id == state.task.projectId }?.title ?: "No Project",
                         onValueChange = { },
                         readOnly = true,
+                        label = { Text("Project") },
                         trailingIcon = {
                             ExposedDropdownMenuDefaults.TrailingIcon(expanded = isProjectDropdownExpanded)
                         },
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier
                             .fillMaxWidth()
                             .menuAnchor()
@@ -200,7 +235,12 @@ fun TaskDetailScreen(
                     ) {
                         // Add "No Project" option
                         DropdownMenuItem(
-                            text = { Text("No Project") },
+                            text = { 
+                                Text(
+                                    "No Project",
+                                    style = MaterialTheme.typography.bodyLarge
+                                ) 
+                            },
                             onClick = {
                                 viewModel.updateProject(null)
                                 isProjectDropdownExpanded = false
@@ -210,7 +250,12 @@ fun TaskDetailScreen(
                         // Add project options
                         state.availableProjects.forEach { project ->
                             DropdownMenuItem(
-                                text = { Text(project.title) },
+                                text = { 
+                                    Text(
+                                        project.title,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    ) 
+                                },
                                 onClick = {
                                     viewModel.updateProject(project.id)
                                     isProjectDropdownExpanded = false
@@ -219,8 +264,7 @@ fun TaskDetailScreen(
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
                 // Due date picker
                 Row(
@@ -229,7 +273,8 @@ fun TaskDetailScreen(
                 ) {
                     Text(
                         text = "Due Date",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f)
                     )
 
@@ -248,14 +293,20 @@ fun TaskDetailScreen(
                                 calendar.get(Calendar.MONTH),
                                 calendar.get(Calendar.DAY_OF_MONTH)
                             ).show()
-                        }
+                        },
+                        shape = MaterialTheme.shapes.medium
                     ) {
-                        Icon(Icons.Default.DateRange, contentDescription = "Select Date")
+                        Icon(
+                            Icons.Default.DateRange, 
+                            contentDescription = "Select Date",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             state.task.dueDate?.let {
                                 SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(it)
-                            } ?: "No Due Date"
+                            } ?: "Set Due Date",
+                            style = MaterialTheme.typography.labelLarge
                         )
                     }
                 }

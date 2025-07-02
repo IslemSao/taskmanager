@@ -27,12 +27,7 @@ class MainActivity : ComponentActivity() {
     private var startDestination = Screen.SignIn.route
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Install splash screen (must be before super.onCreate)
-        val splashScreen = installSplashScreen()
-        
-        // Keep splash screen visible until auth state is determined
-        splashScreen.setKeepOnScreenCondition { !isAuthReady }
-        
+
         super.onCreate(savedInstanceState)
         
         // Check authentication state before continuing

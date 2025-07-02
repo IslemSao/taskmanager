@@ -21,7 +21,9 @@ data class ProjectDto(
     val ownerId: String = "",
 
     // Change this if 'members' in Firestore is an array of String IDs
-    val members: List<String> = emptyList()
+    val members: List<String> = emptyList(),
+    // Add memberIds for Firebase security rules
+    val memberIds: List<String> = listOf(ownerId) + members
     // If members MUST be List<ProjectMemberDto>, see notes below
 )
 

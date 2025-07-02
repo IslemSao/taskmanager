@@ -28,5 +28,12 @@ interface ProjectMemberDao {
 
     @Query("SELECT * FROM project_members ")
     fun getAllMembers(): Flow<List<ProjectMemberEntity>>
+
+    @Query("DELETE FROM project_members ")
+    suspend fun deleteAllMembers()
+
+    //getMembersForProjectsList
+    @Query("SELECT * FROM project_members WHERE projectId IN (:projectIds)")
+    suspend fun getMembersForProjectsList(projectIds: List<String>): List<ProjectMemberEntity>
 }
 

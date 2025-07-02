@@ -34,5 +34,6 @@ data class TaskEntity(
     val subtasks: List<Subtask>,
     val createdAt: Date,
     val modifiedAt: Date,
-    val syncStatus: SyncStatus
+    val syncStatus: SyncStatus,
+    val userId: String? = null // Optional userId for multi-user support
 )

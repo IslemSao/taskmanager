@@ -8,8 +8,11 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -46,11 +49,19 @@ fun TaskListScreen(
             viewModel.clearError()
         }
     }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Tasks") }
+                title = { 
+                    Text(
+                        "Tasks",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -58,17 +69,20 @@ fun TaskListScreen(
             FloatingActionButton(
                 onClick = {
                     navController.navigate(Screen.TaskDetail.createRoute())
-                }
+                },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add Task")
             }
-        }
-    ) { padding ->
-        if (state.isLoading) {
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->        if (state.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .windowInsetsPadding(WindowInsets.systemBars),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
@@ -120,11 +134,12 @@ fun TaskList(
         itemsState = tasks
         visibleItems = tasks.associate { it.id to true }
     }
-
     LazyColumn(
         state = listState,
         contentPadding = contentPadding,
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(WindowInsets.systemBars)
     ) {
         items(
             items = itemsState,
@@ -214,14 +229,11 @@ fun TaskList(
                             )
                         }
                     },
-                    content = {
-                        Log.d("bombardiro", "lista ${projects}")
-                        val borderColor = projects.find { it.id == task.projectId }?.color ?: 0x000
+                    content = {                        Log.d("bombardiro", "lista ${projects}")
                         TaskItem(
                             task = task,
                             onClick = { onTaskClick(task.id) },
                             onCompletionToggle = { onCompletionToggle(task) },
-                            borderColor = Color(borderColor)
                         )
                     }
                 )

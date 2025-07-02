@@ -32,4 +32,8 @@ interface ProjectInvitationDao {
 
     @Query("DELETE FROM project_invitations")
     suspend fun deleteAllInvitations()
+
+    //getAllLocalInvitationIds
+    @Query("SELECT id FROM project_invitations")
+    suspend fun getAllLocalInvitationIds(): List<String>
 }

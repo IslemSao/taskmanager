@@ -2,8 +2,13 @@ package com.example.taskmanager.presentation.notification
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -16,6 +21,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -41,25 +47,33 @@ fun NotificationsScreen(
             viewModel.clearError()
         }
     }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Notifications") },
+                title = { 
+                    Text(
+                        text = "Notifications",
+                        style = MaterialTheme.typography.titleLarge
+                    ) 
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { padding ->
-        if (state.isLoading) {
+    ) { padding ->        if (state.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .windowInsetsPadding(WindowInsets.systemBars),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
@@ -68,27 +82,40 @@ fun NotificationsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .windowInsetsPadding(WindowInsets.systemBars)
+                    .padding(24.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "No notifications",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "No notifications",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "You're all caught up!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }        } else {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(16.dp)
+                    .windowInsetsPadding(WindowInsets.systemBars)
+                    .padding(24.dp)
             ) {
                 // Here we'd render the list of notifications
-                // For now, just showing a placeholder
+                // For now, just showing a placeholder with better styling
                 Text(
                     text = "You have ${state.notifications.size} notifications",
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }

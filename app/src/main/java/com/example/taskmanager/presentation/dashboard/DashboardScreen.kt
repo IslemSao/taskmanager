@@ -7,11 +7,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -117,13 +121,13 @@ fun DashboardScreen(
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add") // Generic Add icon
             }
-        }
-    ) { padding ->
+        }    ) { padding ->
         // Show loading indicator based on ViewModel's state
         if (state.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.systemBars)
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
@@ -244,19 +248,32 @@ fun DashboardContent(
 
 @Composable
 fun WelcomeSection(userName: String) {
-    Column(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        shape = MaterialTheme.shapes.large
     ) {
-        Text(
-            text = "Welcome back,",
-            style = MaterialTheme.typography.bodyLarge
-        )
-        Text(
-            text = userName,
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+        ) {
+            Text(
+                text = "Welcome back,",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = userName,
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
     }
 }
 
@@ -291,12 +308,6 @@ fun QuickActionsSection(
                 modifier = Modifier.weight(1f)
             )
 
-            ActionCard(
-                icon = Icons.Default.DateRange,
-                title = "Calendar",
-                onClick = onViewCalendarClick,
-                modifier = Modifier.weight(1f)
-            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -525,7 +536,6 @@ fun UpcomingTasksSection(
                         task = task,
                         onClick = { onTaskClick(task.id) },
                         onCompletionToggle = { onCompletionToggle(task) },
-                        borderColor = Color(color) // Pass a border color
                     )
                 }
             }

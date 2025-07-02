@@ -16,7 +16,8 @@ data class Project(
     val modifiedAt: Date = Date(),
     val syncStatus: SyncStatus = SyncStatus.PENDING,
     val ownerId: String = "", // Owner's user ID
-    val members: List<ProjectMember> = emptyList() // Users who have access to this project
+    val members: List<ProjectMember> = emptyList(), // Users who have access to this project
+    val memberIds: List<String> = listOf(ownerId) + members.map { it.userId } // For Firebase security rules
 )
 
 data class ProjectMember(
@@ -24,7 +25,8 @@ data class ProjectMember(
     val userId: String,
     val email: String, // For display purposes
     val displayName: String, // For display purposes
-    val role: ProjectRole = ProjectRole.MEMBER
+    val role: ProjectRole = ProjectRole.MEMBER,
+    val joinedAt: Date = Date() // When the member joined the project
 )
 
 enum class ProjectRole {
