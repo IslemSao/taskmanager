@@ -8,12 +8,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -45,6 +48,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -111,12 +117,15 @@ fun ProjectDetailScreen(
         DatePickerDialog(
             onDismissRequest = { showStartDatePicker = false },
             confirmButton = {
-                Button(onClick = {
-                    showStartDatePicker = false
-                    startDatePickerState.selectedDateMillis?.let { dateMillis ->
-                        viewModel.updateStartDate(Date(dateMillis))
-                    }
-                }) {
+                Button(
+                    onClick = {
+                        showStartDatePicker = false
+                        startDatePickerState.selectedDateMillis?.let { dateMillis ->
+                            viewModel.updateStartDate(Date(dateMillis))
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors()
+                ) {
                     Text("OK")
                 }
             },
@@ -142,12 +151,15 @@ fun ProjectDetailScreen(
         DatePickerDialog(
             onDismissRequest = { showDueDatePicker = false },
             confirmButton = {
-                Button(onClick = {
-                    showDueDatePicker = false
-                    dueDatePickerState.selectedDateMillis?.let { dateMillis ->
-                        viewModel.updateDueDate(Date(dateMillis))
-                    }
-                }) {
+                Button(
+                    onClick = {
+                        showDueDatePicker = false
+                        dueDatePickerState.selectedDateMillis?.let { dateMillis ->
+                            viewModel.updateDueDate(Date(dateMillis))
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors()
+                ) {
                     Text("OK")
                 }
             },
@@ -165,13 +177,13 @@ fun ProjectDetailScreen(
             )
         }
     }
-
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        if (state.isNewProject) "New Project" else "Edit Project"
+                        text = if (state.isNewProject) "New Project" else "Edit Project",
+                        style = MaterialTheme.typography.titleLarge
                     )
                 },
                 navigationIcon = {
@@ -191,16 +203,20 @@ fun ProjectDetailScreen(
                             )
                         }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { padding ->
-        if (state.isLoading) {
+    ) { padding ->        if (state.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .windowInsetsPadding(WindowInsets.systemBars),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
@@ -210,7 +226,8 @@ fun ProjectDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(16.dp)
+                    .windowInsetsPadding(WindowInsets.systemBars)
+                    .padding(24.dp)
                     .verticalScroll(rememberScrollState())
             ) {
                 // Title field
@@ -218,7 +235,8 @@ fun ProjectDetailScreen(
                     value = state.project.title,
                     onValueChange = { viewModel.updateTitle(it) },
                     label = { Text("Title") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -229,24 +247,22 @@ fun ProjectDetailScreen(
                     onValueChange = { viewModel.updateDescription(it) },
                     label = { Text("Description") },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
+                    minLines = 3,
+                    shape = MaterialTheme.shapes.medium
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Replace the entire color picker section with this:
-
-// Color selection
+                // Color selection
                 Text(
                     text = "Project Color",
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-// Color picker
+                Spacer(modifier = Modifier.height(8.dp))                // Color picker
                 LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     val colors = listOf(
@@ -267,15 +283,14 @@ fun ProjectDetailScreen(
                         Color(0xFFFF9800) to "Orange",
                         Color(0xFFFF5722) to "Deep Orange"
                     )
-
                     items(colors) { (color, name) ->
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
                                 .background(color)
                                 .border(
-                                    width = 2.dp,
+                                    width = 3.dp,
                                     color = if (state.project.color == color.toArgb()) {
                                         MaterialTheme.colorScheme.primary
                                     } else {
@@ -293,79 +308,90 @@ fun ProjectDetailScreen(
                                     imageVector = Icons.Default.Done,
                                     contentDescription = "Selected",
                                     tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Date fields
+                Spacer(modifier = Modifier.height(24.dp))                // Date fields
                 Text(
                     text = "Project Timeline",
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Start date
                 OutlinedCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { showStartDatePicker = true }
-                ) {
-                    Row(
+                        .clickable { showStartDatePicker = true },
+                    colors = CardDefaults.outlinedCardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    ),
+                    shape = MaterialTheme.shapes.medium
+                ) {                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(20.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.CalendarToday,
-                            contentDescription = "Start Date"
+                            contentDescription = "Start Date",
+                            tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.width(16.dp))
                         Column {
                             Text(
                                 text = "Start Date",
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = state.project.startDate?.let { dateFormatter.format(it) } ?: "Not set",
-                                style = MaterialTheme.typography.bodyLarge
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Due date
                 OutlinedCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { showDueDatePicker = true }
-                ) {
-                    Row(
+                        .clickable { showDueDatePicker = true },
+                    colors = CardDefaults.outlinedCardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    ),
+                    shape = MaterialTheme.shapes.medium
+                ) {                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(20.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.EventBusy,
-                            contentDescription = "Due Date"
+                            contentDescription = "Due Date",
+                            tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.width(16.dp))
                         Column {
                             Text(
                                 text = "Due Date",
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = state.project.dueDate?.let { dateFormatter.format(it) } ?: "Not set",
-                                style = MaterialTheme.typography.bodyLarge
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -376,7 +402,8 @@ fun ProjectDetailScreen(
                 // Project Members section - now shown for both new and existing projects
                 Text(
                     text = "Project Members",
-                    style = MaterialTheme.typography.titleMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -398,19 +425,18 @@ fun ProjectDetailScreen(
 
                 // Invite section - available for both new and existing projects
                 Spacer(modifier = Modifier.height(16.dp))
-
-                OutlinedTextField(
+            OutlinedTextField(
                     value = state.inviteEmail,
                     onValueChange = { viewModel.updateInviteEmail(it) },
                     label = { Text("Invite by Email") },
                     modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
                     trailingIcon = {
                         IconButton(
                             onClick = {
                                 if (state.isNewProject) {
                                     viewModel.addPendingInvite()
                                 } else {
-
                                     viewModel.inviteMember()
                                 }
                             },
@@ -475,15 +501,20 @@ fun ProjectDetailScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Save button
+                Spacer(modifier = Modifier.height(24.dp))                // Save button
                 Button(
                     onClick = { viewModel.saveProject() },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !state.isSaving && state.project.title.isNotBlank()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    enabled = !state.isSaving && state.project.title.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(),
+                    shape = MaterialTheme.shapes.medium
                 ) {
-                    Text(if (state.isSaving) "Saving..." else "Save Project")
+                    Text(
+                        text = if (state.isSaving) "Saving..." else "Save Project",
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
             }
         }

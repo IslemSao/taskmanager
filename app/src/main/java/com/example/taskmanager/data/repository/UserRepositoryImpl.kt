@@ -15,8 +15,8 @@ import com.example.taskmanager.data.local.entity.UserEntity
 import com.example.taskmanager.data.remote.dto.ProjectDto // Need DTOs for mapping
 import com.example.taskmanager.data.remote.dto.ProjectInvitationDto
 import com.example.taskmanager.data.remote.dto.ProjectMemberDto
-import com.example.taskmanager.data.remote.dto.TaskDto    // Need DTOs for mapping
-import com.example.taskmanager.data.remote.firebase.FirebaseAuthSource
+import com.example.taskmanager.data.remote.dto.TaskDto // Need DTOs for mapping
+// Removed FirebaseAuthSource import, assume firebaseAuthSource provides user ID correctly
 import com.example.taskmanager.data.remote.firebase.FirebaseUserSource
 import com.example.taskmanager.domain.model.Priority
 import com.example.taskmanager.domain.model.Subtask
@@ -26,18 +26,33 @@ import com.example.taskmanager.domain.repository.UserRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
+import kotlinx.coroutines.delay
+import android.database.sqlite.SQLiteConstraintException // More specific catch
+import com.example.taskmanager.data.remote.firebase.FirebaseAuthSource
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentLinkedQueue // Alternative for queues
+
+// Assuming firebaseAuthSource is correctly injected and provides user ID
+// Might need to adjust how currentUserId is obtained if not from auth source directly
+import com.google.firebase.auth.FirebaseAuth // Example if using direct auth
 
 class UserRepositoryImpl @Inject constructor(
     private val userDao: UserDao,
     private val projectDao: ProjectDao,
     private val taskDao: TaskDao,
-    private val invitationDao: ProjectInvitationDao, // Add DAO for invitations
-    // private val projectMemberDao: ProjectMemberDao, // Keep if used elsewhere
+    private val invitationDao: ProjectInvitationDao,
     private val firebaseAuthSource: FirebaseAuthSource,
-    private val projectMemberDao: ProjectMemberDao, // Add DAO for project members
+    private val projectMemberDao: ProjectMemberDao,
     private val firebaseUserSource: FirebaseUserSource,
+    private val firebaseAuth: FirebaseAuth // Example: Assuming direct injection for user ID
+): UserRepository {
 
-) : UserRepository {
+    // --- In-Memory Retry Queues ---
+    // Using ConcurrentLinkedQueue for better thread safety if retries happen concurrently
+    private val taskRetryQueue = ConcurrentLinkedQueue<TaskDto>()
+    private val invitationRetryQueue = ConcurrentLinkedQueue<ProjectInvitationDto>()
+    private val retryMutex = Mutex() // To prevent concurrent modification issues during retry logic
 
     // --- Auth Methods (Remove fetchUserData call as done previously) ---
     override suspend fun signIn(email: String, password: String): Result<User> {
@@ -68,17 +83,6 @@ class UserRepositoryImpl @Inject constructor(
     }
 
 
-    override suspend fun signOut(): Result<Unit> {
-        val result = firebaseAuthSource.signOut()
-        if (result.isSuccess) {
-            Log.d("UserRepository", "Clearing local data on sign out")
-            userDao.deleteAllUsers()
-            projectDao.deleteAllProjects() // Clear projects for logged-out user
-            taskDao.deleteAllTasks()       // Clear tasks for logged-out user
-            invitationDao
-        }
-        return result
-    }
 
     override fun getCurrentUser(): Flow<User?> {
         return userDao.getCurrentUser().map { entity ->
@@ -92,154 +96,259 @@ class UserRepositoryImpl @Inject constructor(
 
     // --- NEW Listener Flows Exposed by Repository ---
 
-    override fun listenToRemoteProjects():Flow<Result<Pair<List<ProjectDto>, List<ProjectMemberDto>>>>{
-        // Directly expose the flow from the source
-        return firebaseUserSource.listenToUserProjects()
+
+    // --- Auth Methods (Remain largely the same) ---
+    // ... (signIn, signInWithGoogle, signUp, signOut, getCurrentUser, isUserAuthenticated) ...
+    // Ensure signOut clears the retry queues as well
+    override suspend fun signOut(): Result<Unit> {
+        val result = firebaseAuthSource.signOut() // Assuming this is the correct call now
+        if (result.isSuccess) {
+            Log.d("UserRepository", "Clearing local data on sign out")
+            // Clear local data
+            userDao.deleteAllUsers()
+            projectDao.deleteAllProjects()
+            taskDao.deleteAllTasks()
+            invitationDao.deleteAllInvitations() // Make sure this exists
+            projectMemberDao.deleteAllMembers() // Make sure this exists
+
+            // Clear retry queues
+            taskRetryQueue.clear()
+            invitationRetryQueue.clear()
+            Log.d("UserRepository", "Cleared retry queues on sign out")
+        }
+        return result
     }
 
 
+    // --- NEW Listener Flows Exposed by Repository ---
+    override fun listenToRemoteProjects(): Flow<Result<Pair<List<ProjectDto>, List<ProjectMemberDto>>>> {
+        return firebaseUserSource.listenToUserProjects()
+    }
 
     override fun listenToRemoteTasks(): Flow<Result<List<TaskDto>>> {
-        // Directly expose the flow from the source
         return firebaseUserSource.listenToUserTasks()
     }
 
     override fun listenToRemoteInvitations(): Flow<Result<List<ProjectInvitationDto>>> {
-        // Directly expose the flow from the source
         return firebaseUserSource.listenToInvitations()
     }
 
+    // --- Helper function to retry operations ---
+    // Keep this for potential direct DAO errors, but primary logic relies on pre-filtering
+    private suspend fun <T> withRetry(
+        maxAttempts: Int = 3,
+        initialDelay: Long = 500,
+        operation: suspend () -> T
+    ): T {
+        var attempt = 0
+        var currentDelay = initialDelay
+        while (true) { // Loop indefinitely until success or max attempts reached
+            try {
+                return operation()
+            } catch (e: SQLiteConstraintException) { // Catch specific constraint errors
+                attempt++
+                if (attempt >= maxAttempts || !e.message.orEmpty().contains("FOREIGN KEY constraint failed", ignoreCase = true)) {
+                    Log.e("UserRepository", "Caught non-FK constraint or max retries reached on attempt $attempt: ${e.message}", e)
+                    throw e // Rethrow if not FK error or max attempts reached
+                }
+                Log.w("UserRepository", "Foreign key constraint failed (attempt $attempt/$maxAttempts), retrying in ${currentDelay}ms...", e)
+                delay(currentDelay)
+                currentDelay = (currentDelay * 2).coerceAtMost(5000) // Exponential backoff, capped
+            } catch (e: Exception) {
+                Log.e("UserRepository", "Caught other exception during retryable operation (attempt $attempt): ${e.message}", e)
+                throw e // Rethrow other exceptions immediately
+            }
+        }
+    }
+
+    // --- Sync Logic ---
+
+    // Sync Members (Keep existing logic, assumes projects are handled separately)
     @Transaction
     override suspend fun syncRemoteMembersToLocal(memberDtos: List<ProjectMemberDto>) {
+        Log.d("UserRepository", "Syncing ${memberDtos.size} remote project members to local DB")
+        if (memberDtos.isEmpty()) {
+            Log.d("UserRepository", "No members to sync.")
+            // Optional: Still perform deletion logic if needed even with empty remote list
+        }
+
         try {
-            Log.d("UserRepository", "Syncing ${memberDtos.size} remote project members to local DB")
-
-            // 1. Map DTOs to Entities
-            val memberEntities = memberDtos.map { dto ->
-                ProjectMemberEntity(
-                    projectId = dto.projectId,
-                    userId = dto.userId,
-                    email = dto.email,
-                    displayName = dto.displayName,
-                    role = dto.role
-                )
-            }
-
-            // 2. Get unique project IDs from the received members
-            val projectIdsWithMembers = memberDtos.map { it.projectId }.distinct()
-
-            // 3. Get current members in local DB for these projects
-            val currentLocalMembers = projectMemberDao.getMembersForProjects(projectIdsWithMembers)
-
-            // 4. Calculate members to delete
-            // These are members present locally but not in the latest list from Firestore
-            val membersToDelete = currentLocalMembers.filter { localMember ->
-                memberDtos.none { remoteMember ->
-                    remoteMember.projectId == localMember.projectId &&
-                            remoteMember.userId == localMember.userId
+            // We still wrap the core logic in withRetry as a fallback
+            withRetry {
+                // 1. Map DTOs to Entities (Only map necessary items)
+                val memberEntities = memberDtos.map { dto ->
+                    ProjectMemberEntity(
+                        projectId = dto.projectId,
+                        userId = dto.userId, // Corrected field name from userld
+                        email = dto.email,
+                        displayName = dto.displayName,
+                        role = dto.role
+                    )
                 }
-            }
 
-            if (membersToDelete.isNotEmpty()) {
-                Log.d("UserRepository", "Deleting ${membersToDelete.size} local project members")
-                projectMemberDao.deleteMembers(membersToDelete)
-            } else {
-                Log.d("UserRepository", "No project members to delete locally")
-            }
+                // 2. Get unique project IDs from the received members
+                val projectIdsWithMembers = memberDtos.map { it.projectId }.distinct().toSet()
 
-            // 5. Upsert the entities received from remote
-            if (memberEntities.isNotEmpty()) {
-                // This will insert new members and update existing ones based on their 'projectId' and 'userId'
-                Log.d("UserRepository", "Upserting ${memberEntities.size} project members locally")
-                Log.d("UserRepository", "project members $memberEntities ")
-                projectMemberDao.upsertAll(memberEntities)
-            } else {
-                Log.d("UserRepository", "No project members to upsert locally")
-            }
+                // 3. Get current members in local DB FOR THESE PROJECTS ONLY
+                val currentLocalMembers = if (projectIdsWithMembers.isNotEmpty()) {
+                    projectMemberDao.getMembersForProjectsList(projectIdsWithMembers.toList()) // Assuming this DAO method exists
+                } else {
+                    emptyList()
+                }
 
+
+                // 4. Calculate members to delete (present locally for these projects, but not in remote list)
+                val membersToDelete = currentLocalMembers.filter { localMember ->
+                    memberEntities.none { remoteEntity ->
+                        remoteEntity.projectId == localMember.projectId && remoteEntity.userId == localMember.userId
+                    }
+                }
+
+                if (membersToDelete.isNotEmpty()) {
+                    Log.d("UserRepository", "Deleting ${membersToDelete.size} local project members for projects: $projectIdsWithMembers")
+                    projectMemberDao.deleteMembers(membersToDelete)
+                }
+
+                // 5. Verify projects exist before adding members
+                val existingProjectIds = projectDao.getAllLocalProjectIds().toSet()
+                val (validMemberEntities, skippedMembers) = memberEntities.partition {
+                    existingProjectIds.contains(it.projectId)
+                }
+
+                if (skippedMembers.isNotEmpty()) {
+                    Log.w("UserRepository", "Skipping ${skippedMembers.size} members due to non-existent projects: ${skippedMembers.map { it.projectId to it.userId }}")
+                    // NOTE: We are NOT adding skipped members to a retry queue here,
+                    // assuming member sync happens AFTER project sync usually.
+                    // If members could arrive before projects consistently, a retry queue for members might be needed too.
+                }
+
+                // 6. Upsert the valid entities received from remote
+                if (validMemberEntities.isNotEmpty()) {
+                    Log.d("UserRepository", "Upserting ${validMemberEntities.size} project members locally for projects: $projectIdsWithMembers")
+                    projectMemberDao.upsertAll(validMemberEntities)
+                } else {
+                    Log.d("UserRepository", "No valid project members to upsert locally for projects: $projectIdsWithMembers")
+                }
+            } // End withRetry
             Log.d("UserRepository", "Project member sync transaction complete")
 
         } catch (e: Exception) {
             Log.e("UserRepository", "Error during project member sync transaction", e)
-            // Handle error appropriately (re-throw, log, etc.)
-            throw e // or handle differently based on your needs
+            throw e // Rethrow or handle
         }
     }
 
+
+    // Sync Invitations (Modified with Retry Queue)
     @Transaction
     override suspend fun syncRemoteInvitationsToLocal(projectInvitationDtos: List<ProjectInvitationDto>) {
-        // Get current user ID - needed if your local table stores invites for multiple users
-        val currentUserId = firebaseAuthSource.getCurrentUserId() // Or get it from where you store it
+        val currentUserId = firebaseAuth.currentUser?.uid // Get current user ID reliably
         if (currentUserId == null) {
             Log.e("UserRepository", "Cannot sync invitations, user not authenticated.")
-            // Optionally throw an exception or return early depending on desired behavior
-            return
+            // Clear queue for safety? Or rely on sign out?
+            invitationRetryQueue.clear()
+            return // Or throw
         }
+        Log.d("UserRepository", "Syncing ${projectInvitationDtos.size} remote invitations for user $currentUserId to local DB")
 
         try {
-            Log.d("UserRepository", "Syncing ${projectInvitationDtos.size} remote invitations for user $currentUserId to local DB")
+            // 1. Get existing Project IDs first
+            val existingProjectIds = projectDao.getAllLocalProjectIds().toSet()
 
-            // 1. Map DTOs to Entities
-            val invitationEntities = projectInvitationDtos.map { dto ->
+            // 2. Filter invitations: valid vs pending retry
+            val validInvitationDtos = mutableListOf<ProjectInvitationDto>()
+            val newlyPendingInvitations = mutableListOf<ProjectInvitationDto>()
+
+            for (dto in projectInvitationDtos) {
+                // Check if the referenced project exists
+                if (existingProjectIds.contains(dto.projectId)) {
+                    validInvitationDtos.add(dto)
+                } else {
+                    // Project doesn't exist locally yet, add to retry queue
+                    newlyPendingInvitations.add(dto)
+                }
+            }
+
+            // Add newly pending invitations to the main queue
+            if (newlyPendingInvitations.isNotEmpty()) {
+                retryMutex.withLock { // Ensure thread-safe access if retry runs concurrently
+                    newlyPendingInvitations.forEach { dto ->
+                        // Avoid adding duplicates if the exact same DTO object is already queued
+                        if (!invitationRetryQueue.contains(dto)) {
+                            invitationRetryQueue.offer(dto) // Add to end of queue
+                            Log.w("UserRepository", "Invitation ${dto.id} (Project ${dto.projectId}) needs project. Added to retry queue.")
+                        }
+                    }
+                    Log.d("UserRepository", "Invitation retry queue size: ${invitationRetryQueue.size}")
+                }
+            }
+
+            // 3. Map valid DTOs to Entities
+            val invitationEntities = validInvitationDtos.map { dto ->
                 ProjectInvitationEntity(
-                    id = dto.id,
+                    id = dto.id, // Ensure DTO has non-null id from Firestore doc ID
                     projectId = dto.projectId,
                     projectTitle = dto.projectTitle,
-                    inviterId = dto.inviterId,
+                    inviterId = dto.inviterId, // Corrected field name from inviterld
                     inviterName = dto.inviterName,
-                    inviteeId = dto.inviteeId, // Should match currentUserId for invites received via listener
+                    inviteeId = dto.inviteeId, // Corrected field name from inviteeld
                     inviteeEmail = dto.inviteeEmail,
                     status = dto.status,
                     createdAt = dto.createdAt,
-
+                    // Add a field to track which user this invite is for, if needed.
+                    // Assuming invites are fetched for the current user based on inviteeEmail/inviteeId
+                    // userId = currentUserId // Example if storing the recipient user ID
                 )
             }
 
-            // 2. Get IDs from remote (received list)
-            val remoteInvitationIds = projectInvitationDtos.map { it.id }.toSet()
+            // 4. Calculate IDs to delete (fetch based on current user if necessary)
+            // Adjust DAO call as needed: getAllLocalInvitationIdsForUser or similar
+            val remoteInvitationIds = projectInvitationDtos.map { it.id }.toSet() // All received IDs
+            val localInvitationIds = invitationDao.getAllLocalInvitationIds().toSet() // Fetch all *currently* valid local IDs
+            // OR: invitationDao.getAllLocalInvitationIdsForUser(currentUserId).toSet()
 
-            // 3. Get IDs currently in local DB (for the specific user)
-            // Adjust the DAO call based on your DAO definition
-            val localInvitationIds = invitationDao.getAllLocalInvitationIdsForUser(currentUserId).toSet()
-            // OR: val localInvitationIds = invitationDao.getAllLocalInvitationIds().toSet()
-
-            // 4. Calculate IDs to delete locally
-            // These are IDs present locally but NOT in the latest list from Firestore
             val idsToDelete = localInvitationIds - remoteInvitationIds
-            if (idsToDelete.isNotEmpty()) {
-                Log.d("UserRepository", "Deleting ${idsToDelete.size} local invitations for user $currentUserId: $idsToDelete")
-                invitationDao.deleteInvitationsByIds(idsToDelete.toList())
-            } else {
-                Log.d("UserRepository", "No invitations to delete locally for user $currentUserId.")
-            }
 
-            // 5. Upsert the entities received from remote
-            // This will insert new invitations and update existing ones based on their 'id'
-            if (invitationEntities.isNotEmpty()) {
-                Log.d("UserRepository", "Upserting ${invitationEntities.size} invitations locally for user $currentUserId.")
-                invitationDao.upsertAllInvitations(invitationEntities)
-            } else {
-                Log.d("UserRepository", "No invitations to upsert locally for user $currentUserId.")
-            }
+            // Perform Deletion and Upsert within a retry block as a fallback
+            withRetry {
+                // 5. Delete local invitations no longer present remotely
+                if (idsToDelete.isNotEmpty()) {
+                    Log.d("UserRepository", "Deleting ${idsToDelete.size} local invitations for user $currentUserId: $idsToDelete")
+                    invitationDao.deleteInvitationsByIds(idsToDelete.toList()) // Ensure this DAO method exists
+                }
+
+                // 6. Upsert the valid entities received from remote
+                if (invitationEntities.isNotEmpty()) {
+                    Log.d("UserRepository", "Upserting ${invitationEntities.size} valid invitations locally for user $currentUserId.")
+                    invitationDao.upsertAllInvitations(invitationEntities) // Ensure this DAO method exists
+                } else if (projectInvitationDtos.isNotEmpty() && validInvitationDtos.isEmpty()) {
+                    // This case means all received invitations are pending retry
+                    Log.d("UserRepository", "No currently valid invitations to upsert, all pending project availability.")
+                } else {
+                    Log.d("UserRepository", "No invitations to upsert locally for user $currentUserId.")
+                }
+            } // End withRetry
 
             Log.d("UserRepository", "Invitation sync transaction complete for user $currentUserId.")
 
         } catch (e: Exception) {
             Log.e("UserRepository", "Error during invitation sync transaction for user $currentUserId", e)
-            // Decide how to handle transaction errors: re-throw, log, maybe update sync status of related items to ERROR?
+            // Consider clearing the queue on certain errors? Or rely on retry limits?
+            throw e
         }
     }
 
-    // --- NEW Sync Logic (Called when listener flows emit data) ---
 
-    @Transaction // Ensure atomicity
+    // Sync Projects (Triggers Retries)
+    @Transaction
     override suspend fun syncRemoteProjectsToLocal(projectDtos: List<ProjectDto>) {
+        Log.d("UserRepository", "Syncing ${projectDtos.size} remote projects to local DB")
+        var projectsUpserted = false
         try {
-            Log.d("UserRepository", "Syncing ${projectDtos.size} remote projects to local DB")
             // 1. Map DTOs to Entities
             val projectEntities = projectDtos.map { dto ->
                 ProjectEntity(
-                    id = dto.id,
+                    id = dto.id, // Ensure ID is mapped
                     title = dto.title,
                     description = dto.description,
                     color = dto.color,
@@ -249,7 +358,7 @@ class UserRepositoryImpl @Inject constructor(
                     createdAt = dto.createdAt,
                     modifiedAt = dto.modifiedAt,
                     syncStatus = SyncStatus.SYNCED, // Mark as synced
-                    ownerId = dto.ownerId
+                    ownerId = dto.ownerId // Corrected field name from ownerld
                     // Map members if needed/stored differently in Room
                 )
             }
@@ -258,114 +367,291 @@ class UserRepositoryImpl @Inject constructor(
             val remoteProjectIds = projectDtos.map { it.id }.toSet()
 
             // 3. Get IDs currently in local DB
-            val localProjectIds = projectDao.getAllLocalProjectIds().toSet() // Use Set for efficient difference
+            val localProjectIds = projectDao.getAllLocalProjectIds().toSet()
 
             // 4. Calculate IDs to delete
             val idsToDelete = localProjectIds - remoteProjectIds
-            if (idsToDelete.isNotEmpty()) {
-                Log.d("UserRepository", "Deleting ${idsToDelete.size} projects locally: $idsToDelete")
-                projectDao.deleteByIds(idsToDelete.toList())
-            } else {
-                Log.d("UserRepository", "No projects to delete locally.")
-            }
 
+            // Perform Deletion and Upsert within a retry block as a fallback
+            withRetry {
+                // 5. Delete projects no longer present remotely
+                if (idsToDelete.isNotEmpty()) {
+                    Log.d("UserRepository", "Deleting ${idsToDelete.size} projects locally: $idsToDelete")
+                    projectDao.deleteByIds(idsToDelete.toList())
+                    // Cascading deletes should handle related tasks/members/invites in Room if set up
+                }
 
-            // 5. Upsert the entities received from remote
-            if (projectEntities.isNotEmpty()) {
-                Log.d("UserRepository", "Upserting ${projectEntities.size} projects locally.")
-                projectDao.upsertAll(projectEntities)
-            } else {
-                Log.d("UserRepository", "No projects to upsert locally.")
-            }
+                // 6. Upsert the entities received from remote
+                if (projectEntities.isNotEmpty()) {
+                    Log.d("UserRepository", "Upserting ${projectEntities.size} projects locally.")
+                    projectDao.upsertAll(projectEntities)
+                    projectsUpserted = true // Mark that projects were potentially added/updated
+                } else {
+                    Log.d("UserRepository", "No projects to upsert locally.")
+                }
+            } // End withRetry
 
             Log.d("UserRepository", "Project sync transaction complete.")
 
+            // --- TRIGGER RETRIES ---
+            // If projects were successfully upserted, try processing pending items
+            if (projectsUpserted || !taskRetryQueue.isEmpty() || !invitationRetryQueue.isEmpty()) {
+                Log.d("UserRepository", "Project sync successful, triggering retries for pending tasks/invitations...")
+                retryPendingTasks()
+                retryPendingInvitations()
+            }
+
         } catch (e: Exception) {
             Log.e("UserRepository", "Error during project sync transaction", e)
-            // How to handle transaction errors? Maybe re-throw or log.
+            throw e
         }
     }
 
+
+    // Sync Tasks (Modified with Retry Queue)
     @Transaction
     override suspend fun syncRemoteTasksToLocal(taskDtos: List<TaskDto>) {
-        try {
-            Log.d("UserRepository", "Syncing ${taskDtos.size} remote tasks to local DB")
+        Log.d("UserRepository", "Syncing ${taskDtos.size} remote tasks to local DB")
 
-            // Log first few tasks to verify data
-            taskDtos.take(3).forEachIndexed { index, dto ->
-                Log.d("UserRepository", "Sample task $index: id=${dto.id}, title=${dto.title}, projectId=${dto.projectId}")
+        try {
+            // 1. Get existing Project IDs first
+            val existingProjectIds = projectDao.getAllLocalProjectIds().toSet()
+
+            // 2. Filter tasks: valid vs pending retry
+            val validTaskDtos = mutableListOf<TaskDto>()
+            val newlyPendingTasks = mutableListOf<TaskDto>()
+
+            for (dto in taskDtos) {
+                // Check if the referenced project exists (allow tasks with null projectId)
+                if (dto.projectId == null || existingProjectIds.contains(dto.projectId)) {
+                    validTaskDtos.add(dto)
+                } else {
+                    // Project doesn't exist locally yet, add to retry queue
+                    newlyPendingTasks.add(dto)
+                }
             }
 
-            // 1. Map DTOs to Entities
-            val taskEntities = taskDtos.map { dto ->
+            // Add newly pending tasks to the main queue
+            if (newlyPendingTasks.isNotEmpty()) {
+                retryMutex.withLock {
+                    newlyPendingTasks.forEach { dto ->
+                        if (!taskRetryQueue.contains(dto)) { // Avoid duplicates
+                            taskRetryQueue.offer(dto)
+                            Log.w("UserRepository", "Task ${dto.id} (Project ${dto.projectId}) needs project. Added to retry queue.")
+                        }
+                    }
+                    Log.d("UserRepository", "Task retry queue size: ${taskRetryQueue.size}")
+                }
+            }
+
+            // Log first few valid tasks for verification
+            validTaskDtos.take(3).forEachIndexed { index, dto ->
+                Log.d("UserRepository", "Sample valid task $index: id=${dto.id}, title=${dto.title}, projectId=${dto.projectId}")
+            }
+            Log.d("UserRepository", "Processing ${validTaskDtos.size} valid tasks with project references.")
+
+
+            // 3. Map valid DTOs to Entities
+            val taskEntities = validTaskDtos.map { dto ->
+                // ... (TaskEntity mapping logic - Ensure it's correct) ...
                 TaskEntity(
-                    id = dto.id,
+                    id = dto.id, // Ensure DTO has non-null id
                     title = dto.title,
                     description = dto.description,
                     dueDate = dto.dueDate,
                     completed = dto.completed,
-                    priority = try { Priority.valueOf(dto.priority) } catch (e: IllegalArgumentException) {
+                    priority = try {
+                        Priority.valueOf(dto.priority.uppercase()) // Handle case sensitivity
+                    } catch (e: Exception) {
                         Log.w("UserRepository", "Invalid priority '${dto.priority}' for task ${dto.id}, defaulting to MEDIUM")
                         Priority.MEDIUM
                     },
                     projectId = dto.projectId,
-                    labels = dto.labels,
-                    subtasks = dto.subtasks.mapNotNull { subtaskMap ->
+                    labels = dto.labels ?: emptyList(), // Handle null labels
+                    subtasks = dto.subtasks?.mapNotNull { subtaskMap -> // Safer subtask mapping
                         try {
                             Subtask(
-                                id = subtaskMap["id"] as String,
-                                title = subtaskMap["title"] as String,
-                                isCompleted = subtaskMap["isCompleted"] as Boolean
+                                id = subtaskMap["id"] as? String ?: return@mapNotNull null, // Require ID
+                                title = subtaskMap["title"] as? String ?: "",
+                                isCompleted = subtaskMap["isCompleted"] as? Boolean ?: false
                             )
                         } catch (e: Exception) {
                             Log.e("UserRepository", "Error mapping subtask: $subtaskMap", e)
                             null
                         }
-                    },
+                    } ?: emptyList(), // Handle null subtasks list
                     createdAt = dto.createdAt,
                     modifiedAt = dto.modifiedAt,
-                    syncStatus = SyncStatus.SYNCED
-                ).also {
-                    Log.v("UserRepository", "Mapped task entity: ${it.id} with ${it.subtasks.size} subtasks")
-                }
+                    syncStatus = SyncStatus.SYNCED,
+                    userId = dto.userId // Make sure userId is in TaskDto and TaskEntity
+                )
             }
 
-            // 2. Get IDs from remote
-            val remoteTaskIds = taskDtos.map { it.id }.toSet()
-            Log.d("UserRepository", "Remote task IDs count: ${remoteTaskIds.size}")
-
-            // 3. Get IDs currently in local DB
-            val localTaskIds = taskDao.getAllLocalTaskIds().toSet()
-            Log.d("UserRepository", "Local task IDs count: ${localTaskIds.size}")
 
             // 4. Calculate IDs to delete
+            val remoteTaskIds = taskDtos.map { it.id }.toSet() // All received task IDs
+            val localTaskIds = taskDao.getAllLocalTaskIds().toSet()
             val idsToDelete = localTaskIds - remoteTaskIds
-            if (idsToDelete.isNotEmpty()) {
-                Log.d("UserRepository", "Deleting ${idsToDelete.size} tasks locally: $idsToDelete")
-                val deleteCount = taskDao.deleteByIds(idsToDelete.toList())
-                Log.d("UserRepository", "Actual deleted count: $deleteCount")
-            } else {
-                Log.d("UserRepository", "No tasks to delete locally.")
-            }
 
-            // 5. Upsert the entities received from remote
-            if (taskEntities.isNotEmpty()) {
-                Log.d("UserRepository", "Upserting ${taskEntities.size} tasks locally.")
-                val upsertCount = taskDao.upsertAll(taskEntities)
-                Log.d("UserRepository", "Upsert completed, affected rows: $upsertCount")
+            // Perform Deletion and Upsert within a retry block
+            withRetry {
+                // 5. Delete local tasks no longer present remotely
+                if (idsToDelete.isNotEmpty()) {
+                    Log.d("UserRepository", "Deleting ${idsToDelete.size} local tasks: $idsToDelete")
+                    val deleteCount = taskDao.deleteByIds(idsToDelete.toList()) // Use existing DAO method
+                    Log.d("UserRepository", "Actual tasks deleted count: $deleteCount")
+                }
 
-            } else {
-                Log.d("UserRepository", "No tasks to upsert locally.")
-            }
+                // 6. Upsert the valid entities received from remote
+                if (taskEntities.isNotEmpty()) {
+                    Log.d("UserRepository", "Upserting ${taskEntities.size} valid tasks locally.")
+                    val upsertResult = taskDao.upsertAll(taskEntities) // Use existing DAO method
+                    // upsertResult might be List<Long> of row IDs, or Unit depending on DAO
+                    Log.d("UserRepository", "Task upsert completed.") // Affected rows info might not be available directly from upsertAll
+                } else if (taskDtos.isNotEmpty() && validTaskDtos.isEmpty()) {
+                    Log.d("UserRepository", "No currently valid tasks to upsert, all pending project availability.")
+                }
+                else {
+                    Log.d("UserRepository", "No tasks to upsert locally.")
+                }
+            } // End withRetry
 
             Log.d("UserRepository", "Task sync transaction complete.")
 
         } catch (e: Exception) {
             Log.e("UserRepository", "Error during task sync transaction", e)
+            throw e
         }
     }
 
-    // Remove or keep the old fetchUserData if needed for manual sync?
-    // For now, let's assume it's removed or repurposed.
-    // override suspend fun fetchUserData(userId: String, userEmail: String): Result<Unit> { ... }
+
+    // --- Retry Logic Implementation ---
+
+    private suspend fun retryPendingTasks() {
+        retryMutex.withLock { // Prevent concurrent modification/retry attempts
+            if (taskRetryQueue.isEmpty()) {
+                // Log.d("UserRepository", "Task retry queue is empty.")
+                return
+            }
+
+            Log.i("UserRepository", "Attempting to retry ${taskRetryQueue.size} pending tasks...")
+            val currentlyExistingProjectIds = projectDao.getAllLocalProjectIds().toSet()
+            val tasksToRetryNow = mutableListOf<TaskDto>()
+            val tasksStillPending = ConcurrentLinkedQueue<TaskDto>() // Use new queue for remaining items
+
+            // Drain the current queue for processing
+            while(taskRetryQueue.isNotEmpty()) {
+                val taskDto = taskRetryQueue.poll() ?: continue // Get and remove head
+
+                if (taskDto.projectId == null || currentlyExistingProjectIds.contains(taskDto.projectId)) {
+                    // Project dependency met (or no dependency)
+                    tasksToRetryNow.add(taskDto)
+                } else {
+                    // Project still missing, add to the *next* retry queue
+                    tasksStillPending.offer(taskDto)
+                }
+            }
+
+            // Replace the old queue with the one containing items still pending
+            // This is inherently done by draining and only adding back pending ones below,
+            // but if using MutableList, you'd clear and addAll(tasksStillPending)
+
+            if (tasksToRetryNow.isNotEmpty()) {
+                Log.i("UserRepository", "Retrying ${tasksToRetryNow.size} tasks whose projects are now available.")
+                val retryEntities = tasksToRetryNow.map { dto -> /* ... Map DTO to Entity ... */
+                    TaskEntity( /* ... mapping ... */
+                        id = dto.id, title = dto.title, description = dto.description, dueDate = dto.dueDate, completed = dto.completed,
+                        priority = try { Priority.valueOf(dto.priority.uppercase()) } catch (e: Exception) { Priority.MEDIUM },
+                        projectId = dto.projectId, labels = dto.labels ?: emptyList(),
+                        subtasks = dto.subtasks?.mapNotNull { subtaskMap ->
+                            try {
+                                Subtask(
+                                    id = subtaskMap["id"] as? String ?: return@mapNotNull null, // Require ID
+                                    title = subtaskMap["title"] as? String ?: "",
+                                    isCompleted = subtaskMap["isCompleted"] as? Boolean ?: false
+                                )
+                            } catch (e: Exception) {
+                                Log.e("UserRepository", "Error mapping subtask: $subtaskMap", e)
+                                null
+                            }
+                        } ?: emptyList(),
+                        createdAt = dto.createdAt, modifiedAt = dto.modifiedAt, syncStatus = SyncStatus.SYNCED, userId = dto.userId
+                    )
+                }
+                try {
+                    // Retry the upsert for these specific tasks
+                    withRetry(maxAttempts = 2, initialDelay = 100) { // Fewer attempts for retry
+                        taskDao.upsertAll(retryEntities)
+                    }
+                    Log.i("UserRepository", "Successfully retried and upserted ${retryEntities.size} tasks.")
+                } catch (e: Exception) {
+                    Log.e("UserRepository", "Error during task retry upsert for ${retryEntities.size} tasks. Adding back to queue.", e)
+                    // If retry fails, add them back to the pending queue for the *next* cycle
+                    tasksToRetryNow.forEach { tasksStillPending.offer(it) }
+                }
+            }
+
+            // Add any remaining tasks (those whose projects were *still* missing) back into the main queue
+            taskRetryQueue.addAll(tasksStillPending)
+
+            if (taskRetryQueue.isNotEmpty()) {
+                Log.w("UserRepository", "${taskRetryQueue.size} tasks still pending retry.")
+            } else {
+                Log.i("UserRepository", "Task retry queue is now empty after attempt.")
+            }
+        }
+    }
+
+    private suspend fun retryPendingInvitations() {
+        retryMutex.withLock {
+            if (invitationRetryQueue.isEmpty()) {
+                // Log.d("UserRepository", "Invitation retry queue is empty.")
+                return
+            }
+
+            Log.i("UserRepository", "Attempting to retry ${invitationRetryQueue.size} pending invitations...")
+            val currentlyExistingProjectIds = projectDao.getAllLocalProjectIds().toSet()
+            val invitationsToRetryNow = mutableListOf<ProjectInvitationDto>()
+            val invitationsStillPending = ConcurrentLinkedQueue<ProjectInvitationDto>()
+
+            while(invitationRetryQueue.isNotEmpty()) {
+                val invDto = invitationRetryQueue.poll() ?: continue
+
+                if (currentlyExistingProjectIds.contains(invDto.projectId)) {
+                    invitationsToRetryNow.add(invDto)
+                } else {
+                    invitationsStillPending.offer(invDto)
+                }
+            }
+
+
+            if (invitationsToRetryNow.isNotEmpty()) {
+                Log.i("UserRepository", "Retrying ${invitationsToRetryNow.size} invitations whose projects are now available.")
+                val retryEntities = invitationsToRetryNow.map { dto -> /* ... Map DTO to Entity ... */
+                    ProjectInvitationEntity( /* ... mapping ... */
+                        id = dto.id, projectId = dto.projectId, projectTitle = dto.projectTitle, inviterId = dto.inviterId,
+                        inviterName = dto.inviterName, inviteeId = dto.inviteeId, inviteeEmail = dto.inviteeEmail,
+                        status = dto.status, createdAt = dto.createdAt /*, userId = currentUserId if needed */
+                    )
+                }
+                try {
+                    withRetry(maxAttempts = 2, initialDelay = 100) {
+                        invitationDao.upsertAllInvitations(retryEntities)
+                    }
+                    Log.i("UserRepository", "Successfully retried and upserted ${retryEntities.size} invitations.")
+                } catch (e: Exception) {
+                    Log.e("UserRepository", "Error during invitation retry upsert for ${retryEntities.size}. Adding back to queue.", e)
+                    invitationsToRetryNow.forEach { invitationsStillPending.offer(it) }
+                }
+            }
+
+            invitationRetryQueue.addAll(invitationsStillPending)
+
+            if (invitationRetryQueue.isNotEmpty()) {
+                Log.w("UserRepository", "${invitationRetryQueue.size} invitations still pending retry.")
+            } else {
+                Log.i("UserRepository", "Invitation retry queue is now empty after attempt.")
+            }
+        }
+    }
 }

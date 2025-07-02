@@ -29,7 +29,10 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean // For thread-safe boolean check
 
 @HiltViewModel
@@ -92,6 +95,12 @@ class DashboardViewModel @Inject constructor(
     private val initialTasksReceived = AtomicBoolean(false)
     private val initialInvitationsReceived = AtomicBoolean(false)
 
+    // Store latest data to process in correct order
+    private val latestProjects = MutableStateFlow<List<ProjectDto>?>(null)
+    private val latestMembers = MutableStateFlow<List<ProjectMemberDto>?>(null)
+    private val latestTasks = MutableStateFlow<List<TaskDto>?>(null)
+    private val latestInvitations = MutableStateFlow<List<ProjectInvitationDto>?>(null)
+
     // --- End Track initial sync ---
 
     init {
@@ -150,83 +159,61 @@ class DashboardViewModel @Inject constructor(
 
         return (application as MainApplication).applicationScope.launch {
             try {
-                // 2. MAP each flow to the sealed type THEN merge
-                merge(
+                // Launch separate coroutines for each listener
+                val projectsJob = launch {
                     listenToRemoteProjectsUseCase()
-                        .map { result ->
-                            result.map { (projects, members) ->
-                                ListenerDataResult.ProjectsResult(projects, members)
+                        .collect { result ->
+                            result.onSuccess { (projects, members) ->
+                                Log.d("DashboardVM", "Received ${projects.size} projects and ${members.size} members")
+                                latestProjects.value = projects
+                                latestMembers.value = members
+                                
+                                // Process data in the correct order
+                                processDataInOrder()
+                            }.onFailure { e ->
+                                Log.e("DashboardVM", "Error receiving projects", e)
+                                _error.value = "Error receiving projects: ${e.message}"
                             }
-                        },
-                    listenToRemoteTasksUseCase()
-                        .map { result -> result.map { ListenerDataResult.TasksResult(it) } },
-                    listenToRemoteInvitationsUseCase()
-                        .map { result -> result.map { ListenerDataResult.InvitationsResult(it) } }
-                )
-                    .collect { result: Result<ListenerDataResult> ->
-                        result.onSuccess { listenerData ->
-                            var dataTypeProcessed: String? = null
-
-                            // 3. Use 'when' on the sealed type to process and set flags
-                            when (listenerData) {
-                                is ListenerDataResult.ProjectsResult -> {
-                                    val projects = listenerData.projects
-                                    val members = listenerData.members
-                                    Log.d(
-                                        "DashboardVM",
-                                        "Listener Flow: Received ${projects.size} Projects and ${members.size} Members."
-                                    )
-                                    syncRemoteProjectsToLocalUseCase(projects)
-                                    syncRemoteMembersToLocalUseCase(members)
-                                    initialProjectsReceived.set(true)
-                                    dataTypeProcessed = "Projects & Members"
-                                }
-
-                                is ListenerDataResult.TasksResult -> {
-                                    val tasks = listenerData.data
-                                    Log.d("bombardiro", "tasks= : $tasks")
-                                    Log.d(
-                                        "DashboardVM",
-                                        "Listener Flow: Received ${tasks.size} Tasks."
-                                    )
-                                    syncRemoteTasksToLocalUseCase(tasks)
-                                    initialTasksReceived.set(true)
-                                    dataTypeProcessed = "Tasks"
-                                }
-
-                                is ListenerDataResult.InvitationsResult -> {
-                                    val invitations = listenerData.data
-                                    Log.d(
-                                        "DashboardVM",
-                                        "Listener Flow: Received ${invitations.size} Invitations."
-                                    )
-                                    syncRemoteInvitationsToLocalUseCase(invitations)
-                                    initialInvitationsReceived.set(true)
-                                    dataTypeProcessed = "Invitations"
-                                }
-                            }
-
-                            // 4. Check if ALL flags are now true to turn off loading
-                            if (initialProjectsReceived.get() && initialTasksReceived.get() && initialInvitationsReceived.get()) {
-                                if (_isLoading.compareAndSet(true, false)) {
-                                    Log.i(
-                                        "DashboardVM",
-                                        "Initial sync COMPLETE for ALL types. isLoading = false."
-                                    )
-                                }
-                            } else {
-                                Log.d(
-                                    "DashboardVM",
-                                    "Initial sync progress: Projects=${initialProjectsReceived.get()}, Tasks=${initialTasksReceived.get()}, Invitations=${initialInvitationsReceived.get()} (Just processed: $dataTypeProcessed)"
-                                )
-                            }
-
-                        }.onFailure { e ->
-                            Log.e("DashboardVM", "Listener flow emitted failure Result", e)
-                            _error.value = "Sync failed: ${e.localizedMessage}"
-                            _isLoading.value = false
                         }
-                    }
+                }
+                
+                val tasksJob = launch {
+                    listenToRemoteTasksUseCase()
+                        .collect { result ->
+                            result.onSuccess { tasks ->
+                                Log.d("DashboardVM", "Received ${tasks.size} tasks")
+                                latestTasks.value = tasks
+                                
+                                // Process data in the correct order
+                                processDataInOrder()
+                            }.onFailure { e ->
+                                Log.e("DashboardVM", "Error receiving tasks", e)
+                                _error.value = "Error receiving tasks: ${e.message}"
+                            }
+                        }
+                }
+                
+                val invitationsJob = launch {
+                    listenToRemoteInvitationsUseCase()
+                        .collect { result ->
+                            result.onSuccess { invitations ->
+                                Log.d("DashboardVM", "Received ${invitations.size} invitations")
+                                latestInvitations.value = invitations
+                                
+                                // Process data in the correct order
+                                processDataInOrder()
+                            }.onFailure { e ->
+                                Log.e("DashboardVM", "Error receiving invitations", e)
+                                _error.value = "Error receiving invitations: ${e.message}"
+                            }
+                        }
+                }
+                
+                // Wait for all jobs to complete (which should only happen if they're cancelled)
+                projectsJob.join()
+                tasksJob.join()
+                invitationsJob.join()
+                
             } catch (ce: CancellationException) {
                 Log.w("DashboardVM", "Listener collection coroutine CANCELLED.", ce)
                 throw ce
@@ -259,11 +246,66 @@ class DashboardViewModel @Inject constructor(
             }
         }
     }
+    
+    private suspend fun processDataInOrder() {
+        (application as MainApplication).applicationScope.launch {
+            // Only process if we have received projects (required for foreign key relationships)
+            val projects = latestProjects.value ?: return@launch
+            val members = latestMembers.value ?: return@launch
+            
+            // First sync projects (they don't depend on anything else)
+            Log.d("DashboardVM", "Processing ${projects.size} projects")
+            syncRemoteProjectsToLocalUseCase(projects)
+            initialProjectsReceived.set(true)
+            
+            // Then sync members (depends on projects)
+            Log.d("DashboardVM", "Processing ${members.size} members")
+            syncRemoteMembersToLocalUseCase(members)
+            
+            // Then sync tasks if available (depends on projects)
+            latestTasks.value?.let { tasks ->
+                Log.d("DashboardVM", "Processing ${tasks.size} tasks")
+                syncRemoteTasksToLocalUseCase(tasks)
+                initialTasksReceived.set(true)
+            }
+            
+            // Finally sync invitations if available 
+            latestInvitations.value?.let { invitations ->
+                Log.d("DashboardVM", "Processing ${invitations.size} invitations")
+                syncRemoteInvitationsToLocalUseCase(invitations)
+                initialInvitationsReceived.set(true)
+            }
+            
+            // Check if sync is complete
+            checkSyncComplete()
+        }
+    }
+    
+    private fun checkSyncComplete() {
+        if (initialProjectsReceived.get() && initialTasksReceived.get() && initialInvitationsReceived.get()) {
+            if (_isLoading.compareAndSet(true, false)) {
+                Log.i("DashboardVM", "Initial sync COMPLETE for ALL types. isLoading = false.")
+            }
+        } else {
+            Log.d(
+                "DashboardVM",
+                "Initial sync progress: Projects=${initialProjectsReceived.get()}, " +
+                "Tasks=${initialTasksReceived.get()}, " +
+                "Invitations=${initialInvitationsReceived.get()}"
+            )
+        }
+    }
 
     private fun resetInitialSyncFlags() {
         initialProjectsReceived.set(false)
         initialTasksReceived.set(false)
         initialInvitationsReceived.set(false)
+        
+        // Clear latest data
+        latestProjects.value = null
+        latestMembers.value = null
+        latestTasks.value = null
+        latestInvitations.value = null
 
         Log.d("DashboardVM", "Initial sync flags reset.")
     }

@@ -1,9 +1,9 @@
-// data/local/entity/ProjectMemberEntity.kt
 package com.example.taskmanager.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
+import java.util.Date
 
 @Entity(
     tableName = "project_members",
@@ -25,5 +25,6 @@ data class ProjectMemberEntity(
     val userId: String,
     val email: String,
     val displayName: String,
-    val role: String
+    val role: String,
+    val joinedAt: Date? = Date() // When the member joined the project
 )

@@ -185,17 +185,19 @@ fun SignInScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // In SignUpScreen.kt, replace the current Google sign-in button implementation:
+                Spacer(modifier = Modifier.height(16.dp))                // Google sign-in button with account picker
                 OutlinedButton(
                     onClick = {
-                        // Request Google sign-in
+                        // Request Google sign-in with forced account picker
                         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                             .requestIdToken(context.getString(R.string.default_web_client_id))
                             .requestEmail()
                             .build()
                         val googleSignInClient = GoogleSignIn.getClient(context, gso)
+                        
+                        // Revoke access to force account picker (faster than signOut)
+                        googleSignInClient.revokeAccess()
+                        // Launch sign-in intent immediately
                         launcher.launch(googleSignInClient.signInIntent)
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -203,11 +205,11 @@ fun SignInScreen(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
+                    ) {                        Icon(
                             painter = painterResource(id = R.drawable.ic_google), // Add Google icon resource
                             contentDescription = "Google",
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(24.dp),
+                            tint = androidx.compose.ui.graphics.Color.Unspecified
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Sign In with Google")

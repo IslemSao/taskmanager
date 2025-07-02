@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -89,34 +92,45 @@ fun ProjectListScreen(
             viewModel.clearError()
         }
     }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Projects") },
+                title = { 
+                    Text(
+                        "Projects",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
             )
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
                     navController.navigate(Screen.ProjectDetail.createRoute())
-                }
+                },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add Project")
             }
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { padding ->
-        if (state.isLoading) {
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->        if (state.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .windowInsetsPadding(WindowInsets.systemBars),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
@@ -125,22 +139,34 @@ fun ProjectListScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .windowInsetsPadding(WindowInsets.systemBars),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "No projects yet. Tap + to create one.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "No projects yet",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Tap the + button to create your first project",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }        } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                contentPadding = PaddingValues(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(padding)
+                    .windowInsetsPadding(WindowInsets.systemBars),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(
                     items = state.projects,
@@ -247,64 +273,71 @@ fun ProjectCard(
     members: List<ProjectMember>
 ) {
     val projectColor = Color(project.color ?: 0x000)  // Convert stored color int to Compose Color
-
-    Card(
+       Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
-            .border(
-                width = 2.dp,
-                color = projectColor.copy(alpha = 0.3f), // Subtle border
-                shape = MaterialTheme.shapes.medium
-            )
+            .clickable { onClick() },
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 4.dp,
+            pressedElevation = 8.dp
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        shape = MaterialTheme.shapes.large
     ) {
-        Column {
-            // Header with color indicator
+        Column {            // Header with color indicator
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(projectColor.copy(alpha = 0.1f)) // Very subtle background
-                    .padding(16.dp),
+                    .background(
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                        shape = MaterialTheme.shapes.large
+                    )
+                    .padding(20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Color indicator dot
                 Box(
                     modifier = Modifier
-                        .size(16.dp)
+                        .size(20.dp)
                         .clip(CircleShape)
                         .background(projectColor)
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                            shape = CircleShape
-                        )
                 )
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = project.title,
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.headlineSmall,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
 
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = project.description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    if (project.description.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = project.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
-                IconButton(onClick = onToggleTasks) {
+                IconButton(
+                    onClick = onToggleTasks,
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
                     Icon(
                         imageVector = if (showTasks) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = if (showTasks) "Hide tasks" else "Show tasks"
+                        contentDescription = if (showTasks) "Hide tasks" else "Show tasks",
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             }
@@ -366,13 +399,11 @@ fun ProjectCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline
                         )
-                    } else {
-                        tasks.forEach { task ->
+                    } else {                        tasks.forEach { task ->
                             TaskItem(
                                 task = task,
                                 onClick = { onClick() },
-                                onCompletionToggle = { /* Handle completion toggle */ },
-                                borderColor = projectColor
+                                onCompletionToggle = { /* Handle completion toggle */ }
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }
@@ -391,30 +422,25 @@ fun MemberRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Avatar circle with initial
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(28.dp)
+                .size(36.dp)
                 .clip(CircleShape)
-                .background(projectColor.copy(alpha = 0.2f))
-                .border(
-                    width = 1.dp,
-                    color = projectColor.copy(alpha = 0.5f),
-                    shape = CircleShape
-                )
+                .background(MaterialTheme.colorScheme.primaryContainer)
         ) {
             Text(
-                text = member.displayName.firstOrNull()?.toString() ?: "?",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                text = member.displayName.firstOrNull()?.toString()?.uppercase() ?: "?",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
 
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(16.dp))
 
         // Member info
         Column(modifier = Modifier.weight(1f)) {
@@ -423,9 +449,10 @@ fun MemberRow(
             ) {
                 Text(
                     text = member.displayName,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))
@@ -434,28 +461,30 @@ fun MemberRow(
                 Surface(
                     shape = MaterialTheme.shapes.small,
                     color = when (member.role.toString().lowercase()) {
-                        "admin" -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                        "owner" -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
-                        else -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
+                        "admin" -> MaterialTheme.colorScheme.primary
+                        "owner" -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.secondary
                     },
                     modifier = Modifier.padding(start = 4.dp)
                 ) {
                     Text(
                         text = member.role.toString(),
                         style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         color = when (member.role.toString().lowercase()) {
-                            "admin" -> MaterialTheme.colorScheme.primary
-                            "owner" -> MaterialTheme.colorScheme.tertiary
-                            else -> MaterialTheme.colorScheme.secondary
+                            "admin" -> MaterialTheme.colorScheme.onPrimary
+                            "owner" -> MaterialTheme.colorScheme.onTertiary
+                            else -> MaterialTheme.colorScheme.onSecondary
                         }
                     )
                 }
             }
 
+            Spacer(modifier = Modifier.height(2.dp))
+
             Text(
                 text = member.email,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
