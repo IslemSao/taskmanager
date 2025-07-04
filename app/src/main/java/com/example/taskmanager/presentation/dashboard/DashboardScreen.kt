@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -91,6 +92,11 @@ fun DashboardScreen(
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh Data")
                     }
                     */
+                    IconButton(onClick = {
+                        navController.navigate(Screen.Profile.route)
+                    }) {
+                        Icon(Icons.Default.Person, contentDescription = "Profile")
+                    }
                     IconButton(onClick = {
                         navController.navigate(Screen.Notifications.route) // Navigate to notifications
                     }) {

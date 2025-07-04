@@ -15,6 +15,7 @@ interface UserRepository {
     suspend fun signInWithGoogle(idToken: String): Result<User>
     suspend fun signUp(email: String, password: String, displayName: String): Result<User>
     suspend fun signOut(): Result<Unit>
+    suspend fun deleteAccount(): Result<Unit>
     // NEW listener flows
     fun listenToRemoteProjects(): Flow<Result<Pair<List<ProjectDto>, List<ProjectMemberDto>>>>
     fun listenToRemoteTasks(): Flow<Result<List<TaskDto>>>
@@ -25,4 +26,5 @@ interface UserRepository {
     suspend fun syncRemoteTasksToLocal(taskDtos: List<TaskDto>)
     suspend fun syncRemoteInvitationsToLocal(projectInvitationDtos: List<ProjectInvitationDto>)
     suspend fun syncRemoteMembersToLocal(projectMemberDtos: List<ProjectMemberDto>)
+    suspend fun updateUser(user: User): Result<Unit>
 }

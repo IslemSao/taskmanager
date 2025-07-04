@@ -119,6 +119,29 @@ class UserRepositoryImpl @Inject constructor(
         return result
     }
 
+    override suspend fun deleteAccount(): Result<Unit> {
+        return try {
+            val result = firebaseAuthSource.deleteAccount()
+            if (result.isSuccess) {
+                Log.d("UserRepository", "Account deleted successfully, clearing local data")
+                // Clear all local data after successful account deletion
+                userDao.deleteAllUsers()
+                projectDao.deleteAllProjects()
+                taskDao.deleteAllTasks()
+                invitationDao.deleteAllInvitations()
+                projectMemberDao.deleteAllMembers()
+
+                // Clear retry queues
+                taskRetryQueue.clear()
+                invitationRetryQueue.clear()
+                Log.d("UserRepository", "Cleared all local data after account deletion")
+            }
+            result
+        } catch (e: Exception) {
+            Log.e("UserRepository", "Failed to delete account", e)
+            Result.failure(e)
+        }
+    }
 
     // --- NEW Listener Flows Exposed by Repository ---
     override fun listenToRemoteProjects(): Flow<Result<Pair<List<ProjectDto>, List<ProjectMemberDto>>>> {

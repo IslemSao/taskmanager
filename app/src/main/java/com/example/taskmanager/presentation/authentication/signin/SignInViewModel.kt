@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import android.util.Log
 
 @HiltViewModel
 class SignInViewModel @Inject constructor(
@@ -82,7 +83,9 @@ class SignInViewModel @Inject constructor(
         )
 
         viewModelScope.launch {
+            Log.d(TAG, "Signing in with Google...")
             val result = signInWithGoogleUseCase(idToken)
+            Log.d(TAG, "Google sign in result: $result")
 
             if (result.isSuccess) {
                 _state.value = _state.value.copy(
@@ -103,6 +106,10 @@ class SignInViewModel @Inject constructor(
 
     fun clearError() {
         _state.value = _state.value.copy(error = null)
+    }
+
+    companion object {
+        private const val TAG = "SignInViewModel"
     }
 }
 
