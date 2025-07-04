@@ -19,6 +19,8 @@ import com.example.taskmanager.presentation.invitation.InvitationsScreen
 import com.example.taskmanager.presentation.invitation.InvitationsViewModel
 import com.example.taskmanager.presentation.notification.NotificationsScreen
 import com.example.taskmanager.presentation.notification.NotificationsViewModel
+import com.example.taskmanager.presentation.profile.ProfileScreen
+import com.example.taskmanager.presentation.profile.ProfileViewModel
 import com.example.taskmanager.presentation.project.detail.ProjectDetailScreen
 import com.example.taskmanager.presentation.project.detail.ProjectDetailViewModel
 import com.example.taskmanager.presentation.project.list.ProjectListScreen
@@ -54,10 +56,9 @@ fun AppNavGraph(startDestination: String = Screen.SignIn.route) {
 
         composable(Screen.Dashboard.route) {
             val viewModel: DashboardViewModel = hiltViewModel()
-            val singInViewModel: SignInViewModel = hiltViewModel()
             DashboardScreen(
                 navController = navController,
-                viewModel = viewModel,
+                viewModel = viewModel
             )
         }
 
@@ -128,6 +129,14 @@ fun AppNavGraph(startDestination: String = Screen.SignIn.route) {
         composable(route = Screen.Notifications.route) {
             val viewModel: InvitationsViewModel = hiltViewModel()
             InvitationsScreen(
+                navController = navController,
+                viewModel = viewModel
+            )
+        }
+
+        composable(route = Screen.Profile.route) {
+            val viewModel: ProfileViewModel = hiltViewModel()
+            ProfileScreen(
                 navController = navController,
                 viewModel = viewModel
             )

@@ -11,20 +11,6 @@ android {
     namespace = "com.example.taskmanager"
     compileSdk = 35
 
-    // Add this flavorDimensions block
-    flavorDimensions += "version"
-
-    // Correct productFlavors block (Kotlin DSL syntax)
-    productFlavors {
-        create("user1") {
-            dimension = "version"
-            applicationIdSuffix = ".user1"
-        }
-        create("user2") {
-            dimension = "version"
-            applicationIdSuffix = ".user2"
-        }
-    }
 
     defaultConfig {
         applicationId = "com.example.taskmanager"

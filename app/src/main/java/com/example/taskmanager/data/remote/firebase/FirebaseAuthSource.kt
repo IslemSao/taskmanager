@@ -135,4 +135,96 @@ class FirebaseAuthSource @Inject constructor(
             photoUrl = user.photoUrl?.toString()
         )
     }
+
+    suspend fun deleteAccount(): Result<Unit> {
+        return try {
+            val currentUser = auth.currentUser
+                ?: return Result.failure(IllegalStateException("No user signed in"))
+
+            val userId = currentUser.uid
+
+            // Delete user data from Firestore first
+            // Delete user projects, tasks, and other associated data
+            firestore.collection("users").document(userId).delete().await()
+
+            // Delete user's projects
+            val userProjects = firestore.collection("projects")
+                .whereEqualTo("ownerId", userId)
+                .get()
+                .await()
+
+            for (project in userProjects.documents) {
+                // Delete tasks in this project
+                val projectTasks = firestore.collection("tasks")
+                    .whereEqualTo("projectId", project.id)
+                    .get()
+                    .await()
+
+                for (task in projectTasks.documents) {
+                    task.reference.delete().await()
+                }
+
+                // Delete project members
+                val projectMembers = firestore.collection("projectMembers")
+                    .whereEqualTo("projectId", project.id)
+                    .get()
+                    .await()
+
+                for (member in projectMembers.documents) {
+                    member.reference.delete().await()
+                }
+
+                // Delete the project itself
+                project.reference.delete().await()
+            }
+
+            // Remove user from other projects as member
+            val memberRecords = firestore.collection("projectMembers")
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
+
+            for (member in memberRecords.documents) {
+                member.reference.delete().await()
+            }
+
+            // Delete user's tasks in other projects
+            val userTasks = firestore.collection("tasks")
+                .whereEqualTo("assignedTo", userId)
+                .get()
+                .await()
+
+            for (task in userTasks.documents) {
+                task.reference.delete().await()
+            }
+
+            // Delete invitations sent to or by this user
+            val userInvitations = firestore.collection("projectInvitations")
+                .whereEqualTo("inviteeEmail", currentUser.email)
+                .get()
+                .await()
+
+            for (invitation in userInvitations.documents) {
+                invitation.reference.delete().await()
+            }
+
+            val sentInvitations = firestore.collection("projectInvitations")
+                .whereEqualTo("inviterUserId", userId)
+                .get()
+                .await()
+
+            for (invitation in sentInvitations.documents) {
+                invitation.reference.delete().await()
+            }
+
+            // Finally, delete the Firebase Auth account
+            currentUser.delete().await()
+
+            Log.d("FirebaseAuthSource", "Account and all associated data deleted successfully")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("FirebaseAuthSource", "Failed to delete account", e)
+            Result.failure(e)
+        }
+    }
 }

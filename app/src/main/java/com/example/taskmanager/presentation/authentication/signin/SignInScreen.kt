@@ -1,6 +1,7 @@
 package com.example.taskmanager.presentation.authentication.signin
 
 import android.app.Activity
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +58,8 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 
+private const val TAG = "SignInScreen"
+
 @Composable
 fun SignInScreen(
     navController: NavController,
@@ -70,16 +73,21 @@ fun SignInScreen(
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        Log.d(TAG, "Google Sign-In Activity Result: resultCode=${result.resultCode}")
         if (result.resultCode == Activity.RESULT_OK) {
             val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
             try {
                 val account = task.getResult(ApiException::class.java)
                 account?.idToken?.let { token ->
+                    Log.d(TAG, "Google Sign-In successful, got token.")
                     viewModel.signInWithGoogle(token)
                 }
             } catch (e: ApiException) {
+                Log.e(TAG, "Google sign-in failed", e)
                 viewModel.setError("Google sign-in failed: ${e.statusCode}")
             }
+        } else {
+            Log.w(TAG, "Google Sign-In cancelled or failed.")
         }
     }
 
@@ -189,14 +197,13 @@ fun SignInScreen(
                 OutlinedButton(
                     onClick = {
                         // Request Google sign-in with forced account picker
+                        Log.d(TAG, "Google Sign-In button clicked.")
                         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                             .requestIdToken(context.getString(R.string.default_web_client_id))
                             .requestEmail()
                             .build()
                         val googleSignInClient = GoogleSignIn.getClient(context, gso)
                         
-                        // Revoke access to force account picker (faster than signOut)
-                        googleSignInClient.revokeAccess()
                         // Launch sign-in intent immediately
                         launcher.launch(googleSignInClient.signInIntent)
                     },
