@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -8,16 +11,29 @@ plugins {
 }
 
 android {
-    namespace = "com.example.taskmanager"
+    namespace = "com.saokt.taskmanager"
     compileSdk = 35
 
+    signingConfigs {
+        create("release") {
+            val keystorePropertiesFile = rootProject.file("keystore.properties")
+            val keystoreProperties = Properties()
+            if (keystorePropertiesFile.exists()) {
+                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+                storeFile = rootProject.file(keystoreProperties["storeFile"] ?: "release-key.keystore")
+                storePassword = keystoreProperties["storePassword"] as String?
+                keyAlias = keystoreProperties["keyAlias"] as String?
+                keyPassword = keystoreProperties["keyPassword"] as String?
+            }
+        }
+    }
 
     defaultConfig {
-        applicationId = "com.example.taskmanager"
+        applicationId = "com.saokt.taskmanager"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 4
+        versionName = "1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -29,6 +45,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -99,13 +116,14 @@ dependencies {
 
     // Hilt testing
     testImplementation("com.google.dagger:hilt-android-testing:2.45")
-    implementation("com.google.android.gms:play-services-auth:21.0.0")
+    implementation("com.google.android.gms:play-services-auth:21.0.0") {
+        exclude(group = "com.google.android.gms", module = "play-services-ads-identifier")
+    }
 
     // Coroutines testing
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
-    implementation("com.google.firebase:firebase-analytics")
     implementation(platform("com.google.firebase:firebase-bom:33.11.0"))
     // Robolectric
     testImplementation("org.robolectric:robolectric:4.10.3")
@@ -116,7 +134,7 @@ dependencies {
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
-    implementation("androidx.compose.material3:material3:1.2.0-alpha08") // Or a later version
+    implementation(libs.androidx.material3)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -126,6 +144,13 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation("com.google.dagger:hilt-android:2.51.1")
     kapt("com.google.dagger:hilt-android-compiler:2.51.1")
+    
+    // Hilt Work Manager integration
+    implementation("androidx.hilt:hilt-work:1.1.0")
+    kapt("androidx.hilt:hilt-compiler:1.1.0")
+    
+    // Startup for WorkManager initialization
+    implementation("androidx.startup:startup-runtime:1.1.1")
 
     val room_version = "2.6.1"
 
@@ -157,6 +182,13 @@ dependencies {
 
     // optional - Paging 3 Integration
     implementation("androidx.room:room-paging:$room_version")
+    implementation(libs.google.material)
+
+    // Glance App Widget
+    implementation("androidx.glance:glance:1.1.0")
+    implementation("androidx.glance:glance-appwidget:1.1.0")
+    // Optional: Glance Material3 (limited set for widgets)
+    implementation("androidx.glance:glance-material3:1.1.0")
 }
 
 

@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Taskmanager" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Taskmanager" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowNoTitle">true</item>
+        <!-- Remove flags that cause the system ActionBar/title bar to re-appear -->
+        <!-- <item name="android:windowFullscreen">true</item> -->
+        <!-- <item name="android:windowTranslucentStatus">true</item> -->
+        <item name="android:windowContentOverlay">@null</item>
+        <!-- <item name="android:windowIsTranslucent">true</item> -->
+    </style>
 
     <!-- Splash screen theme for Android versions below 12 -->
     <style name="Theme.Taskmanager.SplashScreen" parent="Theme.Taskmanager">
