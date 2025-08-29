@@ -1,0 +1,14 @@
+package com.saokt.taskmanager.domain.usecase.task
+
+import com.saokt.taskmanager.domain.model.Task
+import com.saokt.taskmanager.domain.repository.TaskRepository
+import kotlinx.coroutines.flow.Flow
+import javax.inject.Inject
+
+class GetTaskByIdUseCase @Inject constructor(
+    private val taskRepository: TaskRepository
+) {
+    operator fun invoke(taskId: String): Flow<Task?> {
+        return taskRepository.getTaskById(taskId)
+    }
+}

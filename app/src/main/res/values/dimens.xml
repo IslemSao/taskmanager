@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="widget_padding">16dp</dimen>
+    <dimen name="widget_spacing_small">6dp</dimen>
+    <dimen name="widget_item_padding_vertical">12dp</dimen>
+    <dimen name="widget_header_icon">20dp</dimen>
+    <dimen name="widget_header_spacing">8dp</dimen>
+    <dimen name="widget_list_spacing">16dp</dimen>
+    <dimen name="widget_header_padding">16dp</dimen>
+    <dimen name="widget_card_padding">12dp</dimen>
+    <dimen name="widget_item_spacing">10dp</dimen>
+</resources>

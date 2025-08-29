@@ -8,4 +8,11 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="splash_background">#4285F4</color>  <!-- Google blue color -->
+    <color name="widget_bg">#FFFFFFFF</color>
+    <color name="widget_header_bg">#FF6366F1</color>
+    <color name="widget_text_primary">#FF1F2937</color>
+    <color name="widget_text_secondary">#FF6B7280</color>
+    <color name="widget_text_white">#FFFFFFFF</color>
+    <color name="widget_card_bg">#FFF9FAFB</color>
+    <color name="widget_divider">#FFE5E7EB</color>
 </resources>

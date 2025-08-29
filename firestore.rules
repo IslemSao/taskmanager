@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isProjectOwner(projectId) {
+      return request.auth.uid == resource.data.ownerId;
+    }
+    
+    function isProjectMember(projectId) {
+      return request.auth.uid in resource.data.members || request.auth.uid == resource.data.ownerId;
+    }
+    
+    function isTaskOwner(taskId) {
+      return request.auth.uid == resource.data.userId;
+    }
+    
+    function isInvitationRecipient(invitationId) {
+      return request.auth.token.email == resource.data.inviteeEmail;
+    }
+    
+    function isInvitationSender(invitationId) {
+      return request.auth.uid == resource.data.inviterId;
+    }
+
+    // Allow authenticated users to read/write their invitations
+    match /project_invitations/{invitationId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Allow authenticated users to read/write projects
+    match /projects/{projectId} {
+      allow read: if request.auth != null;
+      allow update: if request.auth != null;
+
+      // Allow writing to the members subcollection if authenticated
+      match /members/{memberId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+    // Allow authenticated users to read/write their user document
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Allow authenticated users to read their tasks
+    match /tasks/{taskId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
