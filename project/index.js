@@ -8,7 +8,7 @@
  */
 
 const { setGlobalOptions } = require("firebase-functions");
-const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const admin = require('firebase-admin');
 admin.initializeApp();
 
@@ -85,10 +85,19 @@ exports.sendTaskAssignmentNotification = onDocumentWritten({
   const fcmToken = userDoc.get('fcmToken');
   if (!fcmToken) return null;
 
+  // Get assigner's name
+  let assignerName = 'Someone';
+  if (after.assignedBy) {
+    const assignerDoc = await db.collection('users').doc(after.assignedBy).get();
+    if (assignerDoc.exists) {
+      assignerName = assignerDoc.get('displayName') || assignerDoc.get('email') || 'Someone';
+    }
+  }
+
   const payload = {
     notification: {
-      title: 'New Task Assigned',
-      body: `You have been assigned a new task: "${after.title}"`,
+      title: `Task assigned by ${assignerName}`,
+      body: `You have been assigned: "${after.title}"`,
     },
     data: {
       type: 'task_assignment',
@@ -102,6 +111,73 @@ exports.sendTaskAssignmentNotification = onDocumentWritten({
     notification: payload.notification,
     data: payload.data
   });
+  return null;
+});
+
+// 4. Notify on task completion (to project members)
+exports.sendTaskCompletionNotification = onDocumentUpdated({
+  document: 'tasks/{taskId}'
+}, async (event) => {
+  const before = event.data?.before?.data() || null;
+  const after = event.data?.after?.data() || null;
+
+  // Only notify if task was marked as completed
+  if (!after || !before || before.completed || !after.completed) return null;
+  if (!after.projectId) return null; // Only for project tasks
+
+  // Get project members
+  const projectDoc = await db.collection('projects').doc(after.projectId).get();
+  if (!projectDoc.exists) return null;
+  const project = projectDoc.data();
+  const memberIds = project.memberIds || [];
+  
+  // Don't notify the person who completed the task
+  const notifyIds = memberIds.filter(id => id !== after.userId);
+  if (notifyIds.length === 0) return null;
+
+  // Get completer's name
+  let completerName = 'Someone';
+  if (after.userId) {
+    const userDoc = await db.collection('users').doc(after.userId).get();
+    if (userDoc.exists) {
+      completerName = userDoc.get('displayName') || userDoc.get('email') || 'Someone';
+    }
+  }
+
+  // Fetch FCM tokens
+  const tokens = [];
+  for (const uid of notifyIds) {
+    const udoc = await db.collection('users').doc(uid).get();
+    if (udoc.exists) {
+      const t = udoc.get('fcmToken');
+      if (t) tokens.push(t);
+    }
+  }
+
+  if (tokens.length === 0) return null;
+
+  const payload = {
+    notification: {
+      title: `Task completed in ${project.name}`,
+      body: `${completerName} completed: "${after.title}"`,
+    },
+    data: {
+      type: 'task_completion',
+      taskId: event.params.taskId,
+      projectId: after.projectId,
+    }
+  };
+
+  try {
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: payload.notification,
+      data: payload.data
+    });
+    console.log('[TaskCompletion] Sent to', tokens.length, 'recipients', response.successCount);
+  } catch (err) {
+    console.error('[TaskCompletion] Error sending notifications', err);
+  }
   return null;
 });
 
@@ -153,6 +229,63 @@ exports.notifyOwnerOnInvitationResponse = onDocumentWritten({
     console.log(`[OwnerNotif] Notification sent to owner ${inviterId}, response:`, response);
   } catch (err) {
     console.error(`[OwnerNotif] Error sending notification to owner ${inviterId}:`, err);
+  }
+  return null;
+});
+
+// 3. Send notification to participants on new chat message
+exports.sendChatMessageNotification = onDocumentCreated({
+  document: 'chat_threads/{threadId}/messages/{messageId}'
+}, async (event) => {
+  const snap = event.data;
+  if (!snap) return null;
+  const msg = snap.data();
+  const threadId = event.params.threadId;
+
+  // Load thread to get participants
+  const threadDoc = await db.collection('chat_threads').doc(threadId).get();
+  if (!threadDoc.exists) return null;
+  const thread = threadDoc.data();
+  const participants = thread.participantIds || [];
+  const senderId = msg.senderId;
+
+  const notifyIds = participants.filter((id) => id !== senderId);
+  if (notifyIds.length === 0) return null;
+
+  // Fetch FCM tokens
+  const tokens = [];
+  for (const uid of notifyIds) {
+    const udoc = await db.collection('users').doc(uid).get();
+    if (udoc.exists) {
+      const t = udoc.get('fcmToken');
+      if (t) tokens.push(t);
+    }
+  }
+
+  if (tokens.length === 0) return null;
+
+  const payload = {
+    notification: {
+      title: `New message from ${msg.senderName || msg.senderId || 'Someone'}`,
+      body: msg.text?.slice(0, 120) || 'You have a new chat message',
+    },
+    data: {
+      type: 'chat_message',
+      threadId: threadId,
+      projectId: thread.projectId || '',
+      taskId: thread.taskId || ''
+    }
+  };
+
+  try {
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: payload.notification,
+      data: payload.data
+    });
+    console.log('[ChatNotif] Sent to', tokens.length, 'recipients', response.successCount);
+  } catch (err) {
+    console.error('[ChatNotif] Error sending notifications', err);
   }
   return null;
 });

@@ -263,19 +263,25 @@ class NotificationSettingsManager @Inject constructor(
      */
     fun isInQuietHours(): Boolean {
         val globalSettings = getGlobalSettings()
-        if (!globalSettings.quietHoursEnabled) return false
+        if (!globalSettings.quietHoursEnabled) {
+            Log.d(TAG, "Quiet hours disabled, notifications allowed")
+            return false
+        }
 
         val now = LocalTime.now()
         val start = globalSettings.quietHoursStart
         val end = globalSettings.quietHoursEnd
 
-        return if (start.isBefore(end)) {
-            // Same day quiet hours (e.g., 22:00 to 08:00)
+        val inQuietHours = if (start.isBefore(end)) {
+            // Same day quiet hours (e.g., 10:00 to 18:00)
             now.isAfter(start) && now.isBefore(end)
         } else {
             // Overnight quiet hours (e.g., 22:00 to 08:00 next day)
             now.isAfter(start) || now.isBefore(end)
         }
+
+        Log.d(TAG, "Quiet hours check: current=${now}, start=${start}, end=${end}, inQuietHours=${inQuietHours}")
+        return inQuietHours
     }
 
     /**
@@ -376,6 +382,12 @@ class NotificationSettingsManager @Inject constructor(
                     customTimes = listOf(LocalTime.of(19, 0)),
                     daysOfWeek = DayOfWeek.values().toSet()
                 )
+            )
+            NotificationType.CHAT_MESSAGE -> NotificationPreference(
+                type = type,
+                enabled = true,
+                priority = NotificationPriority.MEDIUM,
+                trigger = NotificationTrigger.EVENT_BASED
             )
         }
     }

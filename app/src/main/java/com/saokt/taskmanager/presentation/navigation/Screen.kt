@@ -24,4 +24,10 @@ sealed class Screen(val route: String) {
     object Notifications : Screen("notifications")
     object NotificationSettings : Screen("notification_settings")
     object Profile : Screen("profile")
+    object Chat : Screen("chat/{projectId}?taskId={taskId}&participants={participants}&currentUserId={currentUserId}") {
+        fun createRoute(projectId: String, taskId: String?, participantsCsv: String, currentUserId: String): String {
+            val t = taskId ?: ""
+            return "chat/$projectId?taskId=$t&participants=$participantsCsv&currentUserId=$currentUserId"
+        }
+    }
 }

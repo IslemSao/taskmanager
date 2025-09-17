@@ -55,5 +55,49 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read, write: if request.auth != null;
     }
+
+    // Utility for chat
+    function inThread(threadId) {
+      return isAuthenticated() &&
+        request.auth.uid in get(/databases/$(database)/documents/chat_threads/$(threadId)).data.participantIds;
+    }
+
+    function validParticipants(list) {
+      return list is list && list.size() > 0 && list.size() <= 50 && request.auth.uid in list;
+    }
+
+    // Chat threads: participants only
+    match /chat_threads/{threadId} {
+      // Read only if the user is a participant
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.participantIds;
+
+      // Create requires the creator to be listed in participantIds and basic schema checks
+      allow create: if isAuthenticated() &&
+        request.resource.data.keys().hasAll(['projectId', 'participantIds', 'createdAt', 'lastUpdatedAt']) &&
+        validParticipants(request.resource.data.participantIds);
+
+      // Updates allowed to participants, and only allow preview/timestamp fields to change
+      allow update: if isAuthenticated() &&
+        request.auth.uid in resource.data.participantIds &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly(['lastMessagePreview', 'lastUpdatedAt']);
+
+      // No deletes for now
+      allow delete: if false;
+
+      // Messages subcollection
+      match /messages/{messageId} {
+        // Only thread participants can read
+        allow read: if inThread(threadId);
+
+        // Create requires sender to be the authenticated user and a participant
+        allow create: if isAuthenticated() &&
+          request.auth.uid == request.resource.data.senderId &&
+          inThread(threadId) &&
+          request.resource.data.keys().hasAll(['threadId', 'senderId', 'text', 'type', 'timestamp']);
+
+        // Messages immutable for simplicity
+        allow update, delete: if false;
+      }
+    }
   }
 }

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -137,6 +138,37 @@ fun TaskDetailScreen(
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(Icons.Default.Done, contentDescription = "Save")
+                        }
+                        // Open chat for this task (participants: assignee, creator, owner)
+                        IconButton(
+                            onClick = {
+                                val task = state.task
+                                val projectId = task.projectId
+                                if (projectId != null) {
+                                    val assigneeId = task.assignedTo
+                                    val creatorId = task.createdBy
+                                    val ownerId = state.availableProjects.find { it.id == projectId }?.ownerId
+                                    val currentUserId = state.currentUser?.id ?: ""
+                                    val participants = listOfNotNull(assigneeId, creatorId, ownerId, currentUserId).distinct()
+                                    if (participants.isNotEmpty()) {
+                                        val csv = participants.joinToString(",")
+                                        navController.navigate(
+                                            com.saokt.taskmanager.presentation.navigation.Screen.Chat.createRoute(
+                                                projectId = projectId,
+                                                taskId = task.id,
+                                                participantsCsv = csv,
+                                                currentUserId = currentUserId
+                                            )
+                                        )
+                                    }
+                                }
+                            },
+                            colors = IconButtonDefaults.iconButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Default.Chat, contentDescription = "Open Chat")
                         }
                     }
                 }

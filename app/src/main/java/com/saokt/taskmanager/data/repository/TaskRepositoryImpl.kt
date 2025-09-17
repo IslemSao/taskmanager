@@ -36,8 +36,38 @@ class TaskRepositoryImpl @Inject constructor(
     }
 
     override fun getTaskById(taskId: String): Flow<Task?> {
-        return taskDao.getTaskById(taskId).map { entity ->
-            entity?.let { taskMapper.entityToDomain(it) }
+        return taskDao.getTaskById(taskId)
+            .map { entity ->
+                if (entity == null) {
+                    Log.w("TaskAccessDebug", "Repository.getTaskById: Room returned null for id=$taskId")
+                    null
+                } else {
+                    val t = taskMapper.entityToDomain(entity)
+                    Log.d(
+                        "TaskAccessDebug",
+                        "Repository.getTaskById: Room task id=${t.id} userId=${t.userId} createdBy=${t.createdBy} assignedTo=${t.assignedTo} projectId=${t.projectId}"
+                    )
+                    t
+                }
+            }
+    }
+
+    override suspend fun fetchTaskByIdRemote(taskId: String): Result<Task?> {
+        return try {
+            val dtoResult = firebaseTaskSource.getTaskById(taskId)
+            if (dtoResult.isSuccess) {
+                val dto = dtoResult.getOrNull()!!
+                val domain = taskMapper.dtoToDomain(dto)
+                taskDao.insertTask(taskMapper.domainToEntity(domain))
+                Log.d("TaskAccessDebug", "fetchTaskByIdRemote: inserted remote task id=${domain.id}")
+                Result.success(domain)
+            } else {
+                Log.w("TaskAccessDebug", "fetchTaskByIdRemote: failed ${dtoResult.exceptionOrNull()?.message}")
+                Result.failure(dtoResult.exceptionOrNull() ?: Exception("Remote fetch failed"))
+            }
+        } catch (e: Exception) {
+            Log.e("TaskAccessDebug", "fetchTaskByIdRemote: exception", e)
+            Result.failure(e)
         }
     }
 

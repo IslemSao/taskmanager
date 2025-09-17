@@ -37,6 +37,7 @@ import com.saokt.taskmanager.presentation.tasks.list.TaskListScreen
 import com.saokt.taskmanager.presentation.tasks.list.TaskListViewModel
 import com.saokt.taskmanager.presentation.calendar.CalendarScreen
 import com.saokt.taskmanager.presentation.calendar.CalendarViewModel
+import com.saokt.taskmanager.presentation.chat.ChatScreen
 
 @Composable
 fun AppNavGraph(startDestination: String = Screen.SignIn.route) {
@@ -200,6 +201,29 @@ fun AppNavGraph(startDestination: String = Screen.SignIn.route) {
                 onTaskClick = { taskId ->
                     navController.navigate(Screen.TaskDetail.createRoute(taskId))
                 }
+            )
+        }
+
+        // Chat screen
+        composable(
+            route = Screen.Chat.route,
+            arguments = listOf(
+                navArgument("projectId") { type = NavType.StringType },
+                navArgument("taskId") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("participants") { type = NavType.StringType },
+                navArgument("currentUserId") { type = NavType.StringType }
+            )
+        ) { entry ->
+            val projectId = entry.arguments?.getString("projectId") ?: ""
+            val taskId = entry.arguments?.getString("taskId")
+            val participants = entry.arguments?.getString("participants") ?: ""
+            val currentUserId = entry.arguments?.getString("currentUserId") ?: ""
+            ChatScreen(
+                navController = navController,
+                projectId = projectId,
+                taskId = taskId,
+                participantsCsv = participants,
+                currentUserId = currentUserId
             )
         }
     }

@@ -35,10 +35,7 @@ class NotificationTypeHandler @Inject constructor(
 
         // Check if we're in quiet hours
         if (settingsManager.isInQuietHours()) {
-            val globalSettings = settingsManager.getGlobalSettings()
-            if (!globalSettings.quietHoursEnabled) {
-                return
-            }
+            return
         }
 
         when (type) {
@@ -54,6 +51,7 @@ class NotificationTypeHandler @Inject constructor(
             NotificationType.WEEKLY_SUMMARY -> handleWeeklySummary()
             NotificationType.MORNING_BRIEFING -> handleMorningBriefing()
             NotificationType.EVENING_REVIEW -> handleEveningReview()
+            NotificationType.CHAT_MESSAGE -> handleChatMessage(customData)
         }
     }
 
@@ -142,6 +140,13 @@ class NotificationTypeHandler @Inject constructor(
         val dayStats = getDayStats()
         val preference = settingsManager.getNotificationPreference(NotificationType.EVENING_REVIEW)
         notificationManager.showEnhancedEveningReviewNotification(dayStats, preference)
+    }
+
+    private fun handleChatMessage(customData: Map<String, Any>) {
+        val preference = settingsManager.getNotificationPreference(NotificationType.CHAT_MESSAGE)
+        val title = customData["title"] as? String ?: "New message"
+        val body = customData["body"] as? String ?: (customData["text"] as? String ?: "You have a new chat message")
+        notificationManager.showSimpleNotification(title, body, preference)
     }
 
     // ========== DATA RETRIEVAL METHODS ==========

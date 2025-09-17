@@ -3,6 +3,7 @@ package com.saokt.taskmanager.domain.di
 import com.saokt.taskmanager.domain.repository.ProjectRepository
 import com.saokt.taskmanager.domain.repository.UserRepository
 import com.saokt.taskmanager.domain.repository.TaskRepository
+import com.saokt.taskmanager.domain.repository.ChatRepository
 import com.saokt.taskmanager.domain.usecase.auth.CheckAuthStatusUseCase
 import com.saokt.taskmanager.domain.usecase.auth.SignInUseCase
 import com.saokt.taskmanager.domain.usecase.auth.SignInWithGoogleUseCase
@@ -23,7 +24,17 @@ import com.saokt.taskmanager.domain.usecase.sync.SyncRemoteProjectsToLocalUseCas
 import com.saokt.taskmanager.domain.usecase.sync.SyncRemoteTasksToLocalUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import com.saokt.taskmanager.domain.usecase.task.AssignTaskUseCase
+import com.saokt.taskmanager.domain.usecase.task.GetTaskByIdRemoteUseCase
+import com.saokt.taskmanager.domain.usecase.task.CreateTaskUseCase
+import com.saokt.taskmanager.domain.usecase.task.DeleteTaskUseCase
 import com.saokt.taskmanager.domain.usecase.task.GetTasksByProjectFromFirebaseUseCase
+import com.saokt.taskmanager.domain.usecase.task.GetTasksUseCase
+import com.saokt.taskmanager.domain.usecase.task.ToggleTaskComplitionUseCase
+import com.saokt.taskmanager.domain.usecase.task.UpdateTaskUseCase
+import com.saokt.taskmanager.domain.usecase.chat.CreateOrGetThreadUseCase
+import com.saokt.taskmanager.domain.usecase.chat.ListenMessagesUseCase
+import com.saokt.taskmanager.domain.usecase.chat.SendMessageUseCase
+import com.saokt.taskmanager.domain.usecase.chat.MarkThreadReadUseCase
 import com.saokt.taskmanager.notification.FCMTokenManager
 import dagger.Module
 import dagger.Provides
@@ -124,6 +135,48 @@ object UseCaseModule {
     ): AssignTaskUseCase {
         return AssignTaskUseCase(taskRepository, userRepository)
     }
+
+    @Provides
+    @Singleton
+    fun provideGetTasksUseCase(taskRepository: TaskRepository): GetTasksUseCase {
+        return GetTasksUseCase(taskRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideToggleTaskComplitionUseCase(taskRepository: TaskRepository): ToggleTaskComplitionUseCase {
+        return ToggleTaskComplitionUseCase(taskRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDeleteTaskUseCase(taskRepository: TaskRepository): DeleteTaskUseCase {
+        return DeleteTaskUseCase(taskRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideCreateTaskUseCase(
+        taskRepository: TaskRepository,
+        userRepository: UserRepository
+    ): CreateTaskUseCase {
+        return CreateTaskUseCase(taskRepository, userRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideUpdateTaskUseCase(
+        taskRepository: TaskRepository,
+        userRepository: UserRepository
+    ): UpdateTaskUseCase {
+        return UpdateTaskUseCase(taskRepository, userRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideGetTaskByIdRemoteUseCase(taskRepository: TaskRepository): GetTaskByIdRemoteUseCase {
+        return GetTaskByIdRemoteUseCase(taskRepository)
+    }
     
     @Provides
     @Singleton
@@ -165,5 +218,30 @@ object UseCaseModule {
     @Singleton
     fun provideGetTasksByProjectFromFirebaseUseCase(taskRepository: TaskRepository): GetTasksByProjectFromFirebaseUseCase {
         return GetTasksByProjectFromFirebaseUseCase(taskRepository)
+    }
+
+    // Chat use cases
+    @Provides
+    @Singleton
+    fun provideCreateOrGetThreadUseCase(chatRepository: ChatRepository): CreateOrGetThreadUseCase {
+        return CreateOrGetThreadUseCase(chatRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideListenMessagesUseCase(chatRepository: ChatRepository): ListenMessagesUseCase {
+        return ListenMessagesUseCase(chatRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSendMessageUseCase(chatRepository: ChatRepository): SendMessageUseCase {
+        return SendMessageUseCase(chatRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideMarkThreadReadUseCase(chatRepository: ChatRepository): MarkThreadReadUseCase {
+        return MarkThreadReadUseCase(chatRepository)
     }
 } 

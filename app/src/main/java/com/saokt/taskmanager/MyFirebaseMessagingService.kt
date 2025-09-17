@@ -11,6 +11,8 @@ import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.saokt.taskmanager.notification.FCMTokenManager
+import com.saokt.taskmanager.notification.NotificationTypeHandler
+import com.saokt.taskmanager.domain.model.NotificationType
 import com.saokt.taskmanager.R
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +27,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var fcmTokenManager: FCMTokenManager
 
+    @Inject
+    lateinit var notificationTypeHandler: NotificationTypeHandler
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -35,18 +40,24 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         super.onMessageReceived(remoteMessage)
         Log.d(TAG, "Received FCM message: ${remoteMessage.messageId}")
 
-        // Handle FCM messages here.
-        val title = remoteMessage.notification?.title ?: "Task Manager"
-        val body = remoteMessage.notification?.body ?: "You have a new notification."
-
-        // You can add custom handling based on message data
+        // Prefer data-based handling when possible
         val data = remoteMessage.data
-        if (data.isNotEmpty()) {
-            Log.d(TAG, "Message data payload: $data")
-            // Handle custom data payload here if needed
+        val type = data["type"]
+        if (type == "chat_message") {
+            val title = remoteMessage.notification?.title ?: "New message"
+            val body = remoteMessage.notification?.body ?: (data["body"] ?: "You have a new chat message")
+            serviceScope.launch {
+                notificationTypeHandler.handleNotificationType(
+                    type = NotificationType.CHAT_MESSAGE,
+                    customData = mapOf("title" to title, "body" to body)
+                )
+            }
+        } else {
+            // Fallback generic notification
+            val title = remoteMessage.notification?.title ?: "Task Manager"
+            val body = remoteMessage.notification?.body ?: "You have a new notification."
+            showNotification(title, body)
         }
-
-        showNotification(title, body)
     }
 
     override fun onNewToken(token: String) {

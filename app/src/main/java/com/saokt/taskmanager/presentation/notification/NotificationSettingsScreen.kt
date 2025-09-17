@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,7 +48,7 @@ fun NotificationSettingsScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -158,7 +159,7 @@ private fun EnhancedNotificationSettingsContent(
                     }
 
                 if (state.globalSettings.quietHoursEnabled) {
-                    Divider()
+                    HorizontalDivider()
 
                     var showStartTimePicker by remember { mutableStateOf(false) }
                     var showEndTimePicker by remember { mutableStateOf(false) }
@@ -267,6 +268,13 @@ private fun EnhancedNotificationSettingsContent(
             }
 
             OutlinedButton(
+                onClick = { viewModel.testQuietHours() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("🌙 Test Quiet Hours")
+            }
+
+            OutlinedButton(
                 onClick = { viewModel.resetToDefaults() },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -350,7 +358,7 @@ private fun NotificationTypeCard(
             }
 
             if (preference.enabled) {
-                Divider()
+                HorizontalDivider()
 
                 // Priority Selection
                 Text(
@@ -379,7 +387,9 @@ private fun NotificationTypeCard(
                         expanded = priorityExpanded,
                         onDismissRequest = { priorityExpanded = false }
                     ) {
-                        NotificationPriority.values().forEach { priority ->
+                        // Prefer entries on Kotlin 1.9+, fallback to values()
+                        (NotificationPriority::class.java.enumConstants?.toList()
+                            ?: NotificationPriority.values().toList()).forEach { priority ->
                             DropdownMenuItem(
                                 text = { Text(priority.name) },
                                 onClick = {
@@ -426,7 +436,8 @@ private fun getNotificationTypeDisplayName(type: NotificationType): String {
         NotificationType.DEADLINE_WARNING -> "⚡ Deadline Warnings"
         NotificationType.WEEKLY_SUMMARY -> "📊 Weekly Summaries"
         NotificationType.MORNING_BRIEFING -> "🌅 Morning Briefings"
-        NotificationType.EVENING_REVIEW -> "🌙 Evening Reviews"
+    NotificationType.EVENING_REVIEW -> "🌙 Evening Reviews"
+    NotificationType.CHAT_MESSAGE -> "💬 Chat Messages"
     }
 }
 
@@ -443,7 +454,8 @@ private fun getNotificationTypeDescription(type: NotificationType): String {
         NotificationType.DEADLINE_WARNING -> "Warnings for approaching deadlines"
         NotificationType.WEEKLY_SUMMARY -> "Weekly overview of your productivity"
         NotificationType.MORNING_BRIEFING -> "Daily morning task overview"
-        NotificationType.EVENING_REVIEW -> "Daily evening productivity review"
+    NotificationType.EVENING_REVIEW -> "Daily evening productivity review"
+    NotificationType.CHAT_MESSAGE -> "Notifications for new chat messages"
     }
 }
 

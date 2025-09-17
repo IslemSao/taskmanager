@@ -2,13 +2,16 @@ package com.saokt.taskmanager.domain.usecase.task
 
 import com.saokt.taskmanager.domain.model.Task
 import com.saokt.taskmanager.domain.repository.TaskRepository
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.onEach
 import javax.inject.Inject
 
-class GetTaskByIdUseCase @Inject constructor(
+class GetTaskByIdRemoteUseCase @Inject constructor(
     private val taskRepository: TaskRepository
 ) {
-    operator fun invoke(taskId: String): Flow<Task?> =
-        taskRepository.getTaskById(taskId)
+    suspend operator fun invoke(taskId: String): Result<Task?> {
+        return taskRepository.fetchTaskByIdRemote(taskId)
+    }
 }
+
+
+
+

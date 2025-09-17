@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +54,29 @@ fun ProjectTasksScreen(
                         }
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = "Edit Project")
+                    }
+
+                    // Open project-wide chat with all members
+                    IconButton(
+                        onClick = {
+                            val project = state.project
+                            if (project != null) {
+                                val memberIds = state.projectMembers.map { it.userId }
+                                val participants = (memberIds + project.ownerId).distinct()
+                                val participantsCsv = participants.joinToString(",")
+                                val currentUserId = state.currentUser?.id ?: ""
+                                navController.navigate(
+                                    Screen.Chat.createRoute(
+                                        projectId = project.id,
+                                        taskId = null,
+                                        participantsCsv = participantsCsv,
+                                        currentUserId = currentUserId
+                                    )
+                                )
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Chat, contentDescription = "Open Chat")
                     }
                 }
             )

@@ -15,6 +15,7 @@ import com.saokt.taskmanager.domain.usecase.project.GetProjectsUseCase
 import com.saokt.taskmanager.domain.usecase.task.AssignTaskUseCase
 import com.saokt.taskmanager.domain.usecase.task.CreateTaskUseCase
 import com.saokt.taskmanager.domain.usecase.task.GetTaskByIdUseCase
+import com.saokt.taskmanager.domain.usecase.task.GetTaskByIdRemoteUseCase
 import com.saokt.taskmanager.domain.usecase.task.UpdateTaskUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -38,6 +39,7 @@ class TaskDetailViewModel @Inject constructor(
     private val getProjectByIdUseCase: GetProjectByIdUseCase,
     private val getProjectMembersUseCase: GetProjectMembersUseCase,
     private val getCurrentUserUseCase: GetCurrentUserUseCase,
+    private val getTaskByIdRemoteUseCase: GetTaskByIdRemoteUseCase,
     private val application: Application
 ) : ViewModel() {
 
@@ -46,6 +48,15 @@ class TaskDetailViewModel @Inject constructor(
 
     init {
         loadProjects()
+        viewModelScope.launch {
+            try {
+                getCurrentUserUseCase().collect { user ->
+                    _state.value = _state.value.copy(currentUser = user)
+                }
+            } catch (_: Exception) {
+                // ignore; current user not critical for screen load
+            }
+        }
     }
 
     private fun loadProjects() {
@@ -82,15 +93,23 @@ class TaskDetailViewModel @Inject constructor(
         (application as MainApplication).applicationScope.launch {
             _state.value = _state.value.copy(isLoading = true)
 
+            // Debug: log identity and incoming id (one-shot)
+            val debugUser = try {
+                getCurrentUserUseCase().first()
+            } catch (_: Exception) { null }
+            Log.d("TaskAccessDebug", "loadTask: uid=${debugUser?.id}, taskId=$taskId")
+
             getTaskByIdUseCase(taskId)
                 .catch { e ->
                     _state.value = _state.value.copy(
                         isLoading = false,
                         error = e.localizedMessage ?: "Unknown error occurred"
                     )
+                    Log.e("TaskAccessDebug", "loadTask: error while collecting task id=$taskId: ${e.localizedMessage}")
                 }
                 .collect { task ->
                     if (task != null) {
+                        Log.d("TaskAccessDebug", "loaded local task: id=${task.id} userId=${task.userId} createdBy=${task.createdBy} assignedTo=${task.assignedTo} projectId=${task.projectId}")
                         _state.value = _state.value.copy(
                             isLoading = false,
                             task = task,
@@ -99,10 +118,26 @@ class TaskDetailViewModel @Inject constructor(
                         // Load project members if task has a project
                         task.projectId?.let { loadProjectMembers(it) }
                     } else {
-                        _state.value = _state.value.copy(
-                            isLoading = false,
-                            error = "Task not found"
-                        )
+                        Log.w("TaskAccessDebug", "local task not found in Room for id=$taskId, trying remote fetch-by-id")
+                        try {
+                            val res = getTaskByIdRemoteUseCase(taskId)
+                            if (res.isSuccess && res.getOrNull() != null) {
+                                val fetched = res.getOrNull()!!
+                                Log.d("TaskAccessDebug", "remote fetched task: id=${fetched.id}")
+                                _state.value = _state.value.copy(
+                                    isLoading = false,
+                                    task = fetched,
+                                    error = null
+                                )
+                                fetched.projectId?.let { loadProjectMembers(it) }
+                            } else {
+                                Log.w("TaskAccessDebug", "remote fetch failed: ${res.exceptionOrNull()?.message}")
+                                _state.value = _state.value.copy(isLoading = false, error = "Task not found")
+                            }
+                        } catch (e: Exception) {
+                            Log.e("TaskAccessDebug", "remote fetch exception", e)
+                            _state.value = _state.value.copy(isLoading = false, error = "Task not found")
+                        }
                     }
                 }
         }
@@ -337,5 +372,6 @@ data class TaskDetailState(
     val error: String? = null,
     val availableProjects: List<Project> = emptyList(),
     val projectMembers: List<ProjectMember> = emptyList(),
-    val isProjectOwner: Boolean = false
+    val isProjectOwner: Boolean = false,
+    val currentUser: com.saokt.taskmanager.domain.model.User? = null
 )
