@@ -17,7 +17,8 @@ class TaskReminderWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted workerParams: WorkerParameters,
     private val taskRepository: TaskRepository,
-    private val notificationManager: TaskNotificationManager
+    private val notificationManager: TaskNotificationManager,
+    private val settingsManager: NotificationSettingsManager
 ) : CoroutineWorker(context, workerParams) {
 
     companion object {
@@ -45,6 +46,17 @@ class TaskReminderWorker @AssistedInject constructor(
     }
 
     private suspend fun checkPendingTasks() {
+        // Check if notifications are enabled and not in quiet hours
+        if (!settingsManager.areRemindersEnabled) {
+            android.util.Log.d("TaskReminderWorker", "Reminders disabled, skipping notification")
+            return
+        }
+        
+        if (settingsManager.isInQuietHours()) {
+            android.util.Log.d("TaskReminderWorker", "In quiet hours, skipping notification")
+            return
+        }
+        
         // Get all incomplete tasks
         val allTasks = taskRepository.getAllTasks().firstOrNull() ?: emptyList()
         val incompleteTasks = allTasks.filter { !it.completed }
@@ -67,6 +79,17 @@ class TaskReminderWorker @AssistedInject constructor(
     }
 
     private suspend fun checkTasksDueSoon() {
+        // Check if notifications are enabled and not in quiet hours
+        if (!settingsManager.areDueSoonNotificationsEnabled) {
+            android.util.Log.d("TaskReminderWorker", "Due soon notifications disabled, skipping notification")
+            return
+        }
+        
+        if (settingsManager.isInQuietHours()) {
+            android.util.Log.d("TaskReminderWorker", "In quiet hours, skipping due soon notification")
+            return
+        }
+        
         val allTasks = taskRepository.getAllTasks().firstOrNull() ?: emptyList()
         val currentDate = Date()
         val next24Hours = Date(currentDate.time + TimeUnit.HOURS.toMillis(24))

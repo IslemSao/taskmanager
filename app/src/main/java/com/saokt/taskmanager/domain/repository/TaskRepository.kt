@@ -8,6 +8,7 @@ interface TaskRepository {
     fun getTaskById(taskId: String): Flow<Task?>
     fun getTasksByProject(projectId: String): Flow<List<Task>>
     suspend fun getTasksByProjectFromFirebase(projectId: String): Result<List<Task>>
+    suspend fun fetchTaskByIdRemote(taskId: String): Result<Task?>
     suspend fun createTask(task: Task): Result<Task>
     suspend fun updateTask(task: Task): Result<Task>
     suspend fun deleteTask(taskId: String): Result<Unit>

@@ -14,6 +14,17 @@ class FirebaseTaskSource @Inject constructor(
 ) {
     private val tasksCollection = firestore.collection("tasks")
 
+    suspend fun getTaskById(taskId: String): Result<TaskDto> {
+        return try {
+            val doc = tasksCollection.document(taskId).get().await()
+            val dto = doc.toObject(TaskDto::class.java)?.copy(id = doc.id)
+                ?: return Result.failure(IllegalStateException("Task not found"))
+            Result.success(dto)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun createTask(taskDto: TaskDto): Result<TaskDto> {
         val debugTag = "TaskCreationDebug"
         Log.d(debugTag, "FirebaseTaskSource: createTask called with taskDto: $taskDto")
@@ -48,9 +59,12 @@ class FirebaseTaskSource @Inject constructor(
             val taskUserId = taskDto.assignedTo ?: currentUserId
             Log.d(debugTag, "Determined taskUserId: $taskUserId (assignedTo: ${taskDto.assignedTo})")
 
+            // Keep the creator as the owner (userId), and use assignedTo solely for assignment.
+            // This prevents the creator from losing read access when assigning the task.
             val taskWithUser = taskDto.copy(
-                userId = taskUserId,
-                createdBy = currentUserId
+                userId = currentUserId,
+                createdBy = currentUserId,
+                assignedTo = taskDto.assignedTo
             )
             Log.d(debugTag, "Final taskWithUser to be saved: $taskWithUser")
             tasksCollection.document(taskWithUser.id).set(taskWithUser).await()

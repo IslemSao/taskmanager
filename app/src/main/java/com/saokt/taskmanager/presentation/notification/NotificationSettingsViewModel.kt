@@ -326,6 +326,34 @@ class NotificationSettingsViewModel @Inject constructor(
         _state.update { it.copy(message = null) }
     }
 
+    /**
+     * Test quiet hours functionality
+     */
+    fun testQuietHours() {
+        viewModelScope.launch {
+            try {
+                val currentTime = java.time.LocalTime.now()
+                val isInQuietHours = settingsManager.isInQuietHours()
+                val globalSettings = settingsManager.getGlobalSettings()
+                
+                _state.update {
+                    it.copy(
+                        message = "Quiet Hours Test:\n" +
+                                "Current time: ${currentTime}\n" +
+                                "Quiet hours enabled: ${globalSettings.quietHoursEnabled}\n" +
+                                "Start: ${globalSettings.quietHoursStart}\n" +
+                                "End: ${globalSettings.quietHoursEnd}\n" +
+                                "Currently in quiet hours: $isInQuietHours"
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(message = "Failed to test quiet hours: ${e.message}")
+                }
+            }
+        }
+    }
+
     // ========== HELPER METHODS ==========
 
     private fun getNotificationTypeDisplayName(type: NotificationType): String {
@@ -342,6 +370,7 @@ class NotificationSettingsViewModel @Inject constructor(
             NotificationType.WEEKLY_SUMMARY -> "Weekly Summaries"
             NotificationType.MORNING_BRIEFING -> "Morning Briefings"
             NotificationType.EVENING_REVIEW -> "Evening Reviews"
+            NotificationType.CHAT_MESSAGE -> "Chat Messages"
         }
     }
 

@@ -44,7 +44,8 @@ enum class NotificationType {
     DEADLINE_WARNING,        // Tasks due within custom time
     WEEKLY_SUMMARY,          // Weekly task summary
     MORNING_BRIEFING,        // Daily morning task overview
-    EVENING_REVIEW           // Daily evening task review
+    EVENING_REVIEW,          // Daily evening task review
+    CHAT_MESSAGE             // New chat message in a thread
 }
 
 // Notification Priority Levels

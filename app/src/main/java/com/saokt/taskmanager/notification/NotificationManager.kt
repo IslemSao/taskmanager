@@ -28,7 +28,8 @@ import javax.inject.Singleton
 
 @Singleton
 class TaskNotificationManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val settingsManager: NotificationSettingsManager
 ) {
     companion object {
         const val TASK_REMINDER_CHANNEL_ID = "task_reminder_channel"
@@ -78,6 +79,12 @@ class TaskNotificationManager @Inject constructor(
 
     fun showTaskReminderNotification(tasks: List<Task>) {
         if (tasks.isEmpty()) return
+        
+        // Check if we're in quiet hours
+        if (settingsManager.isInQuietHours()) {
+            android.util.Log.d("TaskNotificationManager", "In quiet hours, blocking task reminder notification")
+            return
+        }
 
         val pendingIntent = createTaskListPendingIntent()
 
@@ -100,6 +107,12 @@ class TaskNotificationManager @Inject constructor(
     }
 
     fun showTaskDueNotification(task: Task) {
+        // Check if we're in quiet hours
+        if (settingsManager.isInQuietHours()) {
+            android.util.Log.d("TaskNotificationManager", "In quiet hours, blocking task due notification")
+            return
+        }
+        
         val pendingIntent = createTaskDetailPendingIntent(task.id)
         
         val dueText = task.dueDate?.let { dueDate ->
@@ -243,6 +256,11 @@ class TaskNotificationManager @Inject constructor(
 
     fun showEnhancedTaskReminderNotification(tasks: List<Task>, preference: NotificationPreference) {
         if (tasks.isEmpty()) return
+        
+        // Check if we're in quiet hours
+        if (settingsManager.isInQuietHours()) {
+            return
+        }
 
         val channelId = getChannelIdForPriority(preference.priority)
         val pendingIntent = createTaskListPendingIntent()
@@ -265,6 +283,11 @@ class TaskNotificationManager @Inject constructor(
     }
 
     fun showEnhancedDueSoonNotification(task: Task, preference: NotificationPreference) {
+        // Check if we're in quiet hours
+        if (settingsManager.isInQuietHours()) {
+            return
+        }
+        
         val channelId = getChannelIdForPriority(preference.priority)
         val pendingIntent = createTaskDetailPendingIntent(task.id)
 
@@ -793,6 +816,29 @@ class TaskNotificationManager @Inject constructor(
             stats.productivity >= 75 -> "👍 Great job today! Well done!"
             stats.productivity >= 50 -> "👌 Solid day! Keep it up!"
             else -> "💪 Every day is a new opportunity!"
+        }
+    }
+
+    // Simple generic notification for chat or custom events
+    fun showSimpleNotification(title: String, body: String, preference: NotificationPreference) {
+        val channelId = getChannelIdForPriority(preference.priority)
+        val pendingIntent = createAppLaunchPendingIntent()
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(getNotificationPriority(preference.priority))
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .setSound(android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION))
+            .setVibrate(longArrayOf(0, 250, 250, 250))
+            .build()
+
+        try {
+            notificationManager.notify(generateNotificationId(), notification)
+        } catch (e: SecurityException) {
+            e.printStackTrace()
         }
     }
 }
