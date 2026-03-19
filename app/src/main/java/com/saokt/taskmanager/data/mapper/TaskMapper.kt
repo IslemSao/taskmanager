@@ -24,7 +24,8 @@ class TaskMapper @Inject constructor() {
             userId = task.userId,
             createdBy = task.createdBy,
             assignedTo = task.assignedTo,
-            assignedBy = task.assignedBy
+            assignedBy = task.assignedBy,
+            visibleToUserIds = task.visibleToUserIds
         )
     }
 
@@ -46,7 +47,8 @@ class TaskMapper @Inject constructor() {
             createdBy = entity.createdBy,
             assignedTo = entity.assignedTo,
             assignedAt = null, // Set if you store it
-            assignedBy = entity.assignedBy
+            assignedBy = entity.assignedBy,
+            visibleToUserIds = entity.visibleToUserIds
         )
     }
 
@@ -69,7 +71,8 @@ class TaskMapper @Inject constructor() {
             createdBy = task.createdBy,
             assignedTo = task.assignedTo,
             assignedAt = task.assignedAt,
-            assignedBy = task.assignedBy
+            assignedBy = task.assignedBy,
+            visibleToUserIds = task.visibleToUserIds
         )
     }
 
@@ -92,7 +95,8 @@ class TaskMapper @Inject constructor() {
             createdBy = entity.createdBy,
             assignedTo = entity.assignedTo,
             assignedAt = null, // TaskEntity doesn't store assignedAt
-            assignedBy = entity.assignedBy
+            assignedBy = entity.assignedBy,
+            visibleToUserIds = entity.visibleToUserIds
         )
     }
 
@@ -128,7 +132,8 @@ class TaskMapper @Inject constructor() {
             createdBy = dto.createdBy,
             assignedTo = dto.assignedTo,
             assignedAt = dto.assignedAt,
-            assignedBy = dto.assignedBy
+            assignedBy = dto.assignedBy,
+            visibleToUserIds = dto.visibleToUserIds
         )
     }
 }

@@ -20,7 +20,8 @@ data class Task(
     val createdBy: String = "", // User who created the task
     val assignedTo: String? = null, // User assigned to the task
     val assignedAt: Date? = null, // When the task was assigned
-    val assignedBy: String? = null // User who assigned the task
+    val assignedBy: String? = null, // User who assigned the task
+    val visibleToUserIds: List<String> = emptyList()
 )
 
 enum class Priority {

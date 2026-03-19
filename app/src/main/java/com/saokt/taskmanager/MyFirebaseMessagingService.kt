@@ -12,7 +12,11 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.saokt.taskmanager.notification.FCMTokenManager
 import com.saokt.taskmanager.notification.NotificationTypeHandler
+import com.saokt.taskmanager.domain.model.NotificationDestination
+import com.saokt.taskmanager.domain.model.NotificationRecord
+import com.saokt.taskmanager.domain.model.NotificationTarget
 import com.saokt.taskmanager.domain.model.NotificationType
+import com.saokt.taskmanager.domain.repository.NotificationRepository
 import com.saokt.taskmanager.R
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +33,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     @Inject
     lateinit var notificationTypeHandler: NotificationTypeHandler
+
+    @Inject
+    lateinit var notificationRepository: NotificationRepository
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -116,5 +123,13 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         }
 
         notificationManager.notify(notificationId, notificationBuilder.build())
+        notificationRepository.addNotification(
+            NotificationRecord(
+                type = NotificationType.CHAT_MESSAGE,
+                title = title,
+                message = message,
+                target = NotificationTarget(NotificationDestination.NOTIFICATIONS)
+            )
+        )
     }
-} 
+}

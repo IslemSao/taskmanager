@@ -16,13 +16,13 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -67,14 +67,15 @@ import androidx.compose.foundation.layout.size
 fun TaskDetailScreen(
     navController: NavController,
     viewModel: TaskDetailViewModel,
-    taskId: String
+    taskId: String,
+    initialProjectId: String? = null
 ) {
     val state by viewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    LaunchedEffect(taskId) {
-        viewModel.loadTask(taskId)
+    LaunchedEffect(taskId, initialProjectId) {
+        viewModel.loadTask(taskId, initialProjectId)
     }
 
     LaunchedEffect(state.error) {
@@ -121,7 +122,7 @@ fun TaskDetailScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { navController.navigateUp() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                         Text(
                             if (state.isNewTask) "New Task" else "Edit Task",
@@ -168,7 +169,7 @@ fun TaskDetailScreen(
                             ),
                             modifier = Modifier.size(32.dp)
                         ) {
-                            Icon(Icons.Default.Chat, contentDescription = "Open Chat")
+                            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Open Chat")
                         }
                     }
                 }

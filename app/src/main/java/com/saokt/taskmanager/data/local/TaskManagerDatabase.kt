@@ -24,7 +24,8 @@ import com.saokt.taskmanager.data.local.util.Converters
         ProjectMemberEntity::class,
         ProjectInvitationEntity::class
     ],
-    version = 1
+    version = 2,
+    exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class TaskManagerDatabase : RoomDatabase() {

@@ -1,7 +1,5 @@
-// presentation/invitation/InvitationsViewModel.kt
 package com.saokt.taskmanager.presentation.invitation
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.saokt.taskmanager.domain.model.ProjectInvitation
@@ -22,6 +20,7 @@ class InvitationsViewModel @Inject constructor(
     data class InvitationsState(
         val invitations: List<ProjectInvitation> = emptyList(),
         val isLoading: Boolean = false,
+        val processingInvitationId: String? = null,
         val error: String? = null
     )
 
@@ -38,9 +37,7 @@ class InvitationsViewModel @Inject constructor(
             _state.update { it.copy(isLoading = true) }
 
             try {
-                Log.d("bombardiro" , "loadInvitations2")
                 projectRepository.getProjectInvitations().collect { invitations ->
-                    Log.d("bombardiro" , "loadInvitations3 $invitations")
                     _state.update {
                         it.copy(
                             invitations = invitations.filter { inv -> inv.status == com.saokt.taskmanager.domain.model.InvitationStatus.PENDING },
@@ -62,25 +59,30 @@ class InvitationsViewModel @Inject constructor(
 
     fun respondToInvitation(invitationId: String, accept: Boolean) {
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true) }
+            _state.update {
+                it.copy(
+                    processingInvitationId = invitationId,
+                    error = null
+                )
+            }
 
             try {
                 val result = projectRepository.respondToInvitation(invitationId, accept)
 
-                if (result.isSuccess) {
-                    // Don't need to do anything special, the flow will update automatically
-                } else {
+                if (result.isFailure) {
                     _state.update {
                         it.copy(
-                            isLoading = false,
+                            processingInvitationId = null,
                             error = "Failed to respond to invitation: ${result.exceptionOrNull()?.message}"
                         )
                     }
+                } else {
+                    _state.update { it.copy(processingInvitationId = null) }
                 }
             } catch (e: Exception) {
                 _state.update {
                     it.copy(
-                        isLoading = false,
+                        processingInvitationId = null,
                         error = "Failed to respond to invitation: ${e.message}"
                     )
                 }

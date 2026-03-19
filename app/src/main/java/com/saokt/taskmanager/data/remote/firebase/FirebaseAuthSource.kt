@@ -15,18 +15,16 @@ class FirebaseAuthSource @Inject constructor(
     private val firestore: FirebaseFirestore // Add Firestore dependency
 ) {
     // Helper function to get/save FCM token
-    private suspend fun saveFcmToken(email: String) {
+    private suspend fun saveFcmToken(userId: String) {
         try {
-            // Get FCM token
             val fcmToken = FirebaseMessaging.getInstance().token.await()
 
-            // Store in Firestore (users collection)
             firestore.collection("users")
-                .document(email)
+                .document(userId)
                 .set(mapOf("fcmToken" to fcmToken), SetOptions.merge())
                 .await()
 
-            Log.d("FCM", "Token saved for user $email")
+            Log.d("FCM", "Token saved for user $userId")
         } catch (e: Exception) {
             Log.e("FCM", "Failed to save token", e)
         }
@@ -143,81 +141,102 @@ class FirebaseAuthSource @Inject constructor(
 
             val userId = currentUser.uid
 
-            // Delete user data from Firestore first
-            // Delete user projects, tasks, and other associated data
             firestore.collection("users").document(userId).delete().await()
 
-            // Delete user's projects
             val userProjects = firestore.collection("projects")
                 .whereEqualTo("ownerId", userId)
                 .get()
                 .await()
 
             for (project in userProjects.documents) {
-                // Delete tasks in this project
                 val projectTasks = firestore.collection("tasks")
                     .whereEqualTo("projectId", project.id)
                     .get()
                     .await()
-
-                for (task in projectTasks.documents) {
-                    task.reference.delete().await()
-                }
-
-                // Delete project members
-                val projectMembers = firestore.collection("projectMembers")
+                val projectInvitations = firestore.collection("project_invitations")
                     .whereEqualTo("projectId", project.id)
                     .get()
                     .await()
+                val projectMembers = firestore.collection("projects")
+                    .document(project.id)
+                    .collection("members")
+                    .get()
+                    .await()
 
-                for (member in projectMembers.documents) {
-                    member.reference.delete().await()
-                }
-
-                // Delete the project itself
-                project.reference.delete().await()
+                val batch = firestore.batch()
+                projectTasks.documents.forEach { batch.delete(it.reference) }
+                projectInvitations.documents.forEach { batch.delete(it.reference) }
+                projectMembers.documents.forEach { batch.delete(it.reference) }
+                batch.delete(project.reference)
+                batch.commit().await()
             }
 
-            // Remove user from other projects as member
-            val memberRecords = firestore.collection("projectMembers")
-                .whereEqualTo("userId", userId)
+            val memberProjects = firestore.collection("projects")
+                .whereArrayContains("members", userId)
                 .get()
                 .await()
 
-            for (member in memberRecords.documents) {
-                member.reference.delete().await()
+            for (project in memberProjects.documents) {
+                if (project.getString("ownerId") == userId) {
+                    continue
+                }
+                val batch = firestore.batch()
+                batch.delete(
+                    firestore.collection("projects")
+                        .document(project.id)
+                        .collection("members")
+                        .document(userId)
+                )
+                batch.update(
+                    project.reference,
+                    mapOf(
+                        "members" to com.google.firebase.firestore.FieldValue.arrayRemove(userId),
+                        "memberIds" to com.google.firebase.firestore.FieldValue.arrayRemove(userId)
+                    )
+                )
+                batch.commit().await()
             }
 
-            // Delete user's tasks in other projects
-            val userTasks = firestore.collection("tasks")
+            val assignedTasks = firestore.collection("tasks")
                 .whereEqualTo("assignedTo", userId)
                 .get()
                 .await()
-
-            for (task in userTasks.documents) {
-                task.reference.delete().await()
+            assignedTasks.documents.forEach { task ->
+                val visibleTo = (task.get("visibleToUserIds") as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+                task.reference.update(
+                    mapOf(
+                        "assignedTo" to null,
+                        "assignedAt" to null,
+                        "assignedBy" to null,
+                        "visibleToUserIds" to visibleTo.filterNot { it == userId }
+                    )
+                ).await()
             }
 
-            // Delete invitations sent to or by this user
-            val userInvitations = firestore.collection("projectInvitations")
+            val userInvitations = firestore.collection("project_invitations")
                 .whereEqualTo("inviteeEmail", currentUser.email)
                 .get()
                 .await()
+            userInvitations.documents.forEach { it.reference.delete().await() }
 
-            for (invitation in userInvitations.documents) {
-                invitation.reference.delete().await()
-            }
-
-            val sentInvitations = firestore.collection("projectInvitations")
-                .whereEqualTo("inviterUserId", userId)
+            val sentInvitations = firestore.collection("project_invitations")
+                .whereEqualTo("inviterId", userId)
                 .get()
                 .await()
+            sentInvitations.documents.forEach { it.reference.delete().await() }
 
-            for (invitation in sentInvitations.documents) {
-                invitation.reference.delete().await()
-            }
+            val userCreatedTasks = firestore.collection("tasks")
+                .whereEqualTo("createdBy", userId)
+                .get()
+                .await()
+            userCreatedTasks.documents.forEach { it.reference.delete().await() }
 
-            // Finally, delete the Firebase Auth account
+            val ownedTasks = firestore.collection("tasks")
+                .whereEqualTo("userId", userId)
+                .get()
+                .await()
+            ownedTasks.documents.forEach { it.reference.delete().await() }
+
             currentUser.delete().await()
 
             Log.d("FirebaseAuthSource", "Account and all associated data deleted successfully")

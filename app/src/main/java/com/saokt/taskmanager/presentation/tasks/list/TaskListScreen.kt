@@ -1,6 +1,5 @@
 package com.saokt.taskmanager.presentation.tasks.list
 
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeOut
@@ -17,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -50,6 +50,16 @@ fun TaskListScreen(
         }
     }
     Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Tasks") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.navigateUp() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(
@@ -74,22 +84,47 @@ fun TaskListScreen(
                 CircularProgressIndicator()
             }
         } else {
-            TaskList(
-                tasks = state.tasks,
-                contentPadding = padding,
-                onTaskClick = { taskId ->
-                    navController.navigate(Screen.TaskDetail.createRoute(taskId))
-                },
-                onTaskDelete = { taskId ->
-                    viewModel.deleteTask(taskId)
-                },
-                snackbarHostState = snackbarHostState,
-                onCompletionToggle = { task ->
-                    viewModel.toggleTaskCompletion(task)
-                },
-                projects = state.projects,
-                currentUser = state.currentUser
-            )
+            if (state.tasks.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .windowInsetsPadding(WindowInsets.systemBars),
+                    contentAlignment = Alignment.Center
+                ) {
+                    androidx.compose.foundation.layout.Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "No tasks yet",
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Create your first task to start tracking work.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                TaskList(
+                    tasks = state.tasks,
+                    contentPadding = padding,
+                    onTaskClick = { taskId ->
+                        navController.navigate(Screen.TaskDetail.createRoute(taskId))
+                    },
+                    onTaskDelete = { taskId ->
+                        viewModel.deleteTask(taskId)
+                    },
+                    snackbarHostState = snackbarHostState,
+                    onCompletionToggle = { task ->
+                        viewModel.toggleTaskCompletion(task)
+                    },
+                    projects = state.projects,
+                    currentUser = state.currentUser
+                )
+            }
         }
     }
 }
@@ -217,7 +252,7 @@ fun TaskList(
                             )
                         }
                     },
-                    content = {                        Log.d("bombardiro", "lista ${projects}")
+                    content = {
                         TaskItem(
                             task = task,
                             onClick = { onTaskClick(task.id) },

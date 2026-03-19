@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.saokt.taskmanager.domain.model.*
 import com.saokt.taskmanager.domain.usecase.notification.ManageNotificationScheduleUseCase
+import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import com.saokt.taskmanager.notification.NotificationSettingsManager
 import com.saokt.taskmanager.notification.NotificationTypeHandler
 import com.saokt.taskmanager.notification.TaskNotificationScheduler
@@ -12,6 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -23,7 +25,8 @@ class NotificationSettingsViewModel @Inject constructor(
     private val settingsManager: NotificationSettingsManager,
     private val manageNotificationUseCase: ManageNotificationScheduleUseCase,
     private val notificationScheduler: TaskNotificationScheduler,
-    private val notificationTypeHandler: NotificationTypeHandler
+    private val notificationTypeHandler: NotificationTypeHandler,
+    private val getCurrentUserUseCase: GetCurrentUserUseCase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(EnhancedNotificationSettingsState())
@@ -218,15 +221,17 @@ class NotificationSettingsViewModel @Inject constructor(
     fun createNotificationProfile(name: String, basePreferences: List<NotificationPreference> = emptyList()) {
         viewModelScope.launch {
             try {
+                val currentUser = getCurrentUserUseCase().first()
+                    ?: throw IllegalStateException("User not authenticated")
                 val profile = NotificationProfile(
-                    userId = "current_user", // TODO: Get from auth
+                    userId = currentUser.id,
                     name = name,
                     preferences = basePreferences.ifEmpty { settingsManager.getNotificationPreferences() }
                 )
 
                 val profiles = settingsManager.getNotificationProfiles().toMutableList()
                 profiles.add(profile)
-                // Note: We'd need to add a saveProfiles method to the manager
+                settingsManager.saveNotificationProfiles(profiles)
 
                 loadSettings()
                 _state.update {
@@ -425,4 +430,3 @@ data class NotificationSettingsState(
     val notificationsScheduled: Boolean = false,
     val message: String? = null
 )
-

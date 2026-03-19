@@ -1,6 +1,5 @@
 package com.saokt.taskmanager.presentation.components
 
-import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -49,7 +48,6 @@ fun TaskItem(
     val assignee = projectMembers.find { it.userId == task.assignedTo }
     val creator = projectMembers.find { it.userId == task.createdBy }
     val assigner = projectMembers.find { it.userId == task.assignedBy }
-    Log.d("TaskItemDebug", "taskId=${task.id}, title=${task.title}, assignedTo=${task.assignedTo}, createdBy=${task.createdBy}, assignedBy=${task.assignedBy}, currentUser=${currentUser?.id}, isAssignedToMe=$isAssignedToMe, isCreatedByMe=$isCreatedByMe, isOwner=$isOwner, assignee=${assignee?.displayName}, creator=${creator?.displayName}, assigner=${assigner?.displayName}")
     Card(
         modifier = Modifier
             .fillMaxWidth()

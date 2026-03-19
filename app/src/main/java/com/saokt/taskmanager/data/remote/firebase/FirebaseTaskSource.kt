@@ -1,109 +1,126 @@
 package com.saokt.taskmanager.data.remote.firebase
 
-import com.saokt.taskmanager.data.remote.dto.TaskDto
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.tasks.await
-import javax.inject.Inject
 import android.util.Log
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FirebaseFirestore
+import com.saokt.taskmanager.data.remote.dto.ProjectDto
 import com.saokt.taskmanager.data.remote.dto.ProjectMemberDto
+import com.saokt.taskmanager.data.remote.dto.TaskDto
+import kotlinx.coroutines.tasks.await
+import java.util.Date
+import javax.inject.Inject
 
 class FirebaseTaskSource @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
 ) {
-    private val tasksCollection = firestore.collection("tasks")
+    companion object {
+        private const val TAG = "FirebaseTaskSource"
+        private const val PROJECTS_COLLECTION = "projects"
+        private const val TASKS_COLLECTION = "tasks"
+        private const val MEMBERS_SUBCOLLECTION = "members"
+    }
+
+    private val tasksCollection = firestore.collection(TASKS_COLLECTION)
 
     suspend fun getTaskById(taskId: String): Result<TaskDto> {
         return try {
+            val userId = auth.currentUser?.uid
+                ?: return Result.failure(IllegalStateException("User not authenticated"))
             val doc = tasksCollection.document(taskId).get().await()
-            val dto = doc.toObject(TaskDto::class.java)?.copy(id = doc.id)
+            val dto = doc.toDto<TaskDto>()?.copy(id = doc.id)
                 ?: return Result.failure(IllegalStateException("Task not found"))
+            val canView = dto.visibleToUserIds.contains(userId) ||
+                dto.createdBy == userId ||
+                dto.assignedTo == userId ||
+                dto.userId == userId
+            if (!canView) {
+                return Result.failure(IllegalAccessException("Not authorized to view this task"))
+            }
             Result.success(dto)
         } catch (e: Exception) {
+            Log.e(TAG, "getTaskById failed", e)
             Result.failure(e)
         }
     }
 
     suspend fun createTask(taskDto: TaskDto): Result<TaskDto> {
-        val debugTag = "TaskCreationDebug"
-        Log.d(debugTag, "FirebaseTaskSource: createTask called with taskDto: $taskDto")
         return try {
             val currentUserId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
-            Log.d(debugTag, "createTask called. currentUserId: $currentUserId, input taskDto: $taskDto")
-
-            // Check permissions for task creation
-            val canCreate = when {
-                taskDto.projectId != null -> {
-                    // Check if user is project owner or member
-                    val projectDoc = firestore.collection("projects").document(taskDto.projectId).get().await()
-                    val project = projectDoc.toObject(com.saokt.taskmanager.data.remote.dto.ProjectDto::class.java)
-                    project?.let { 
-                        it.ownerId == currentUserId || currentUserId in it.members 
-                    } ?: false
-                }
-                else -> {
-                    // For tasks without projects, user can create their own tasks
-                    taskDto.createdBy == currentUserId
-                }
+            if (taskDto.createdBy != currentUserId) {
+                return Result.failure(IllegalAccessException("Creator mismatch"))
             }
 
-            if (!canCreate) {
-                return Result.failure(IllegalAccessException("Not authorized to create this task"))
-            }
-
-            // Determine the userId for the task:
-            // - If task is assigned to someone, use the assigned user's ID
-            // - If task is not assigned, use the current user's ID
-            val taskUserId = taskDto.assignedTo ?: currentUserId
-            Log.d(debugTag, "Determined taskUserId: $taskUserId (assignedTo: ${taskDto.assignedTo})")
-
-            // Keep the creator as the owner (userId), and use assignedTo solely for assignment.
-            // This prevents the creator from losing read access when assigning the task.
-            val taskWithUser = taskDto.copy(
-                userId = currentUserId,
-                createdBy = currentUserId,
+            val visibleToUserIds = computeVisibleUsers(
+                projectId = taskDto.projectId,
+                creatorId = currentUserId,
                 assignedTo = taskDto.assignedTo
             )
-            Log.d(debugTag, "Final taskWithUser to be saved: $taskWithUser")
-            tasksCollection.document(taskWithUser.id).set(taskWithUser).await()
-            Log.d(debugTag, "Task successfully created in Firestore with id: ${taskWithUser.id}")
-            Result.success(taskWithUser)
+            val normalizedTask = taskDto.copy(
+                userId = currentUserId,
+                createdBy = currentUserId,
+                visibleToUserIds = visibleToUserIds
+            )
+
+            ensureCanAccessProject(normalizedTask.projectId, currentUserId)
+            tasksCollection.document(normalizedTask.id).set(normalizedTask).await()
+            Result.success(normalizedTask)
         } catch (e: Exception) {
-            Log.e(debugTag, "Error creating task", e)
+            Log.e(TAG, "createTask failed", e)
             Result.failure(e)
         }
     }
 
     suspend fun updateTask(taskDto: TaskDto): Result<TaskDto> {
-        val debugTag = "TaskCreationDebug"
-        Log.d(debugTag, "FirebaseTaskSource: updateTask called with taskDto: $taskDto")
         return try {
             val userId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
-
-            // Allow updates if user is the creator, assigned user, or project owner
-            val canUpdate = taskDto.createdBy == userId || 
-                           taskDto.assignedTo == userId ||
-                           taskDto.userId == userId
-
+            val canUpdate = taskDto.visibleToUserIds.contains(userId) ||
+                taskDto.createdBy == userId ||
+                isProjectOwner(taskDto.projectId, userId)
             if (!canUpdate) {
                 return Result.failure(IllegalAccessException("Not authorized to update this task"))
             }
 
-            tasksCollection.document(taskDto.id).set(taskDto).await()
-            Result.success(taskDto)
+            val visibleToUserIds = computeVisibleUsers(
+                projectId = taskDto.projectId,
+                creatorId = taskDto.createdBy.ifBlank { userId },
+                assignedTo = taskDto.assignedTo
+            )
+            val normalizedTask = taskDto.copy(
+                createdBy = taskDto.createdBy.ifBlank { userId },
+                userId = taskDto.userId.ifBlank { taskDto.createdBy.ifBlank { userId } },
+                visibleToUserIds = visibleToUserIds,
+                modifiedAt = Date()
+            )
+
+            ensureCanAccessProject(normalizedTask.projectId, userId)
+            tasksCollection.document(normalizedTask.id).set(normalizedTask).await()
+            Result.success(normalizedTask)
         } catch (e: Exception) {
+            Log.e(TAG, "updateTask failed", e)
             Result.failure(e)
         }
     }
 
-    suspend fun deleteTask(taskId : String): Result<Unit> {
+    suspend fun deleteTask(taskId: String): Result<Unit> {
         return try {
+            val userId = auth.currentUser?.uid
+                ?: return Result.failure(IllegalStateException("User not authenticated"))
+            val task = tasksCollection.document(taskId).get().await().toDto<TaskDto>()?.copy(id = taskId)
+                ?: return Result.failure(IllegalStateException("Task not found"))
+            val canDelete = task.visibleToUserIds.contains(userId) ||
+                task.createdBy == userId ||
+                isProjectOwner(task.projectId, userId)
+            if (!canDelete) {
+                return Result.failure(IllegalAccessException("Not authorized to delete this task"))
+            }
             tasksCollection.document(taskId).delete().await()
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e(TAG, "deleteTask failed", e)
             Result.failure(e)
         }
     }
@@ -112,19 +129,15 @@ class FirebaseTaskSource @Inject constructor(
         return try {
             val userId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
-
-            // Get tasks where userId matches the current user
-            val tasksSnapshot = tasksCollection
-                .whereEqualTo("userId", userId)
+            val tasks = tasksCollection
+                .whereArrayContains("visibleToUserIds", userId)
                 .get()
                 .await()
-
-            val tasks = tasksSnapshot.documents.mapNotNull { 
-                it.toObject(TaskDto::class.java)?.copy(id = it.id)
-            }
-            
+                .documents
+                .mapNotNull { it.toDto<TaskDto>()?.copy(id = it.id) }
             Result.success(tasks)
         } catch (e: Exception) {
+            Log.e(TAG, "getAllTasks failed", e)
             Result.failure(e)
         }
     }
@@ -133,79 +146,38 @@ class FirebaseTaskSource @Inject constructor(
         return try {
             val userId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
-
-            Log.d("ProjectTasksDebug", "FirebaseTaskSource: getTasksByProject called for projectId: $projectId, userId: $userId")
-
-            // First, check if user is project owner
-            val projectDoc = firestore.collection("projects").document(projectId).get().await()
-            val project = projectDoc.toObject(com.saokt.taskmanager.data.remote.dto.ProjectDto::class.java)
-            
-            val isProjectOwner = project?.ownerId == userId
-            Log.d("ProjectTasksDebug", "FirebaseTaskSource: Is project owner: $isProjectOwner")
-
-            val snapshot = tasksCollection
+            val tasks = tasksCollection
                 .whereEqualTo("projectId", projectId)
                 .get()
                 .await()
-
-            val allTasks = snapshot.documents.mapNotNull { 
-                it.toObject(TaskDto::class.java)?.copy(id = it.id)
-            }
-            
-            Log.d("ProjectTasksDebug", "FirebaseTaskSource: All tasks for project: ${allTasks.size}")
-            allTasks.forEach { task ->
-                Log.d("ProjectTasksDebug", "FirebaseTaskSource: Task: ${task.title}, userId: ${task.userId}, createdBy: ${task.createdBy}, assignedTo: ${task.assignedTo}")
-            }
-
-            val filteredTasks = if (isProjectOwner) {
-                // If user is project owner, return all tasks
-                Log.d("ProjectTasksDebug", "FirebaseTaskSource: User is project owner - returning all tasks")
-                allTasks
-            } else {
-                // If user is not project owner, only return their own tasks
-                Log.d("ProjectTasksDebug", "FirebaseTaskSource: User is not project owner - filtering tasks")
-                allTasks.filter { task ->
-                    val isOwnedByUser = task.userId == userId
-                    val isAssignedToUser = task.assignedTo == userId
-                    val isCreatedByUser = task.createdBy == userId
-                    Log.d("ProjectTasksDebug", "FirebaseTaskSource: Task: ${task.title}, isOwnedByUser: $isOwnedByUser, isAssignedToUser: $isAssignedToUser, isCreatedByUser: $isCreatedByUser")
-                    isOwnedByUser || isAssignedToUser || isCreatedByUser
+                .documents
+                .mapNotNull { it.toDto<TaskDto>()?.copy(id = it.id) }
+                .filter { task ->
+                    task.visibleToUserIds.contains(userId) ||
+                        task.createdBy == userId ||
+                        task.assignedTo == userId ||
+                        task.userId == userId
                 }
-            }
-            
-            Log.d("ProjectTasksDebug", "FirebaseTaskSource: Final filtered tasks count: ${filteredTasks.size}")
-            Result.success(filteredTasks)
+            Result.success(tasks)
         } catch (e: Exception) {
-            Log.e("ProjectTasksDebug", "FirebaseTaskSource: Error getting tasks by project", e)
+            Log.e(TAG, "getTasksByProject failed", e)
             Result.failure(e)
         }
     }
 
     suspend fun assignTask(taskId: String, assignedToUserId: String, assignedByUserId: String): Result<TaskDto> {
         return try {
-            val taskDoc = tasksCollection.document(taskId).get().await()
-            val task = taskDoc.toObject(TaskDto::class.java)
-                ?: return Result.failure(IllegalStateException("Task not found"))
-
-            // Check if the user has permission to assign this task
-            // Project owners can assign tasks to any project member
-            // Task creators can assign their own tasks
-            // Assigned users can reassign their tasks
-            val canAssign = when {
-                task.projectId != null -> {
-                    // Check if user is project owner
-                    val projectDoc = firestore.collection("projects").document(task.projectId).get().await()
-                    val project = projectDoc.toObject(com.saokt.taskmanager.data.remote.dto.ProjectDto::class.java)
-                    project?.ownerId == assignedByUserId
-                }
-                else -> {
-                    // For tasks without projects, only creator or assigned user can assign
-                    task.createdBy == assignedByUserId || 
-                    task.assignedTo == assignedByUserId ||
-                    task.userId == assignedByUserId
-                }
+            val currentUserId = auth.currentUser?.uid
+                ?: return Result.failure(IllegalStateException("User not authenticated"))
+            if (currentUserId != assignedByUserId) {
+                return Result.failure(IllegalAccessException("User mismatch"))
             }
 
+            val task = tasksCollection.document(taskId).get().await().toDto<TaskDto>()?.copy(id = taskId)
+                ?: return Result.failure(IllegalStateException("Task not found"))
+            val canAssign = task.visibleToUserIds.contains(assignedByUserId) ||
+                task.createdBy == assignedByUserId ||
+                isProjectOwner(task.projectId, assignedByUserId)
             if (!canAssign) {
                 return Result.failure(IllegalAccessException("Not authorized to assign this task"))
             }
@@ -213,36 +185,78 @@ class FirebaseTaskSource @Inject constructor(
             val updatedTask = task.copy(
                 assignedTo = assignedToUserId,
                 assignedBy = assignedByUserId,
-                assignedAt = java.util.Date()
+                assignedAt = Date(),
+                modifiedAt = Date(),
+                visibleToUserIds = computeVisibleUsers(task.projectId, task.createdBy, assignedToUserId)
             )
 
             tasksCollection.document(taskId).set(updatedTask).await()
             Result.success(updatedTask)
         } catch (e: Exception) {
+            Log.e(TAG, "assignTask failed", e)
             Result.failure(e)
         }
     }
 
     suspend fun getProjectMembers(projectId: String): Result<List<ProjectMemberDto>> {
-        val debugTag = "TaskCreationDebug"
-        Log.d(debugTag, "FirebaseTaskSource: getProjectMembers called for projectId: $projectId")
         return try {
-            val userId = auth.currentUser?.uid
-                ?: return Result.failure(IllegalStateException("User not authenticated"))
-
-            // Assuming ProjectMemberDto has projectId and userId fields
-            val snapshot = firestore.collection("projectMembers")
-                .whereEqualTo("projectId", projectId)
+            val snapshot = firestore.collection(PROJECTS_COLLECTION)
+                .document(projectId)
+                .collection(MEMBERS_SUBCOLLECTION)
                 .get()
                 .await()
-
-            val members = snapshot.documents.mapNotNull {
-                it.toObject(ProjectMemberDto::class.java)?.copy(projectId = it.id)
+            val members = snapshot.documents.mapNotNull { doc ->
+                doc.toDto<ProjectMemberDto>()?.copy(projectId = projectId, userId = doc.id)
             }
             Result.success(members)
         } catch (e: Exception) {
-            Log.e(debugTag, "Error getting project members", e)
+            Log.e(TAG, "getProjectMembers failed", e)
             Result.failure(e)
         }
     }
+
+    private suspend fun ensureCanAccessProject(projectId: String?, userId: String) {
+        if (projectId == null) {
+            return
+        }
+        val project = firestore.collection(PROJECTS_COLLECTION).document(projectId).get().await()
+            .toDto<ProjectDto>()
+            ?: throw IllegalStateException("Project not found")
+        val canAccess = project.ownerId == userId || project.members.contains(userId) || project.memberIds.contains(userId)
+        if (!canAccess) {
+            throw IllegalAccessException("Not authorized to access this project")
+        }
+    }
+
+    private suspend fun computeVisibleUsers(
+        projectId: String?,
+        creatorId: String,
+        assignedTo: String?
+    ): List<String> {
+        val visibleUsers = linkedSetOf(creatorId)
+        if (!assignedTo.isNullOrBlank()) {
+            visibleUsers += assignedTo
+        }
+        if (projectId != null) {
+            val project = firestore.collection(PROJECTS_COLLECTION).document(projectId).get().await()
+                .toDto<ProjectDto>()
+            if (project != null) {
+                if (project.ownerId.isNotBlank()) {
+                    visibleUsers += project.ownerId
+                }
+            }
+        }
+        return visibleUsers.toList()
+    }
+
+    private suspend fun isProjectOwner(projectId: String?, userId: String): Boolean {
+        if (projectId == null) {
+            return false
+        }
+        val project = firestore.collection(PROJECTS_COLLECTION).document(projectId).get().await()
+            .toDto<ProjectDto>()
+        return project?.ownerId == userId
+    }
+
+    private inline fun <reified T> DocumentSnapshot.toDto(): T? = toObject(T::class.java)
 }

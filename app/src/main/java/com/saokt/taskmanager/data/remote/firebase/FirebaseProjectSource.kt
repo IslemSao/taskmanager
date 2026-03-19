@@ -1,12 +1,14 @@
 package com.saokt.taskmanager.data.remote.firebase
 
 import android.util.Log
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.saokt.taskmanager.data.remote.dto.ProjectDto
 import com.saokt.taskmanager.data.remote.dto.ProjectInvitationDto
 import com.saokt.taskmanager.data.remote.dto.ProjectMemberDto
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
@@ -14,52 +16,69 @@ class FirebaseProjectSource @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth
 ) {
-    private val projectsCollection = firestore.collection("projects")
-    private val invitationsCollection = firestore.collection("project_invitations")
-    private val tasksRef = firestore.collection("tasks")
-    private val invitationsRef = firestore.collection("project_invitations")
-    private val membersRef = firestore.collection("project_members")
-    private val usersCollection = firestore.collection("users")
+    companion object {
+        private const val TAG = "FirebaseProjectSource"
+        private const val PROJECTS_COLLECTION = "projects"
+        private const val INVITATIONS_COLLECTION = "project_invitations"
+        private const val TASKS_COLLECTION = "tasks"
+        private const val LEGACY_MEMBERS_COLLECTION = "project_members"
+        private const val LEGACY_MEMBERS_COLLECTION_CAMEL = "projectMembers"
+        private const val MEMBERS_SUBCOLLECTION = "members"
+    }
+
+    private val projectsCollection = firestore.collection(PROJECTS_COLLECTION)
+    private val invitationsCollection = firestore.collection(INVITATIONS_COLLECTION)
+    private val tasksCollection = firestore.collection(TASKS_COLLECTION)
+
     suspend fun createProject(projectDto: ProjectDto): Result<ProjectDto> {
         return try {
             val userId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
+            if (projectDto.ownerId != userId) {
+                return Result.failure(IllegalAccessException("Not authorized to create this project"))
+            }
 
-            val projectWithUser = projectDto.copy(id = userId)
-            projectsCollection.document(projectWithUser.id).set(projectWithUser).await()
-            Result.success(projectWithUser)
+            val normalizedMembers = projectDto.members.ifEmpty { listOf(userId) }.distinct()
+            val normalizedProject = projectDto.copy(
+                members = normalizedMembers,
+                memberIds = normalizedMembers
+            )
+            projectsCollection.document(normalizedProject.id).set(normalizedProject).await()
+            Result.success(normalizedProject)
         } catch (e: Exception) {
+            Log.e(TAG, "createProject failed", e)
             Result.failure(e)
         }
     }
 
-    // In your Firebase implementation class
     suspend fun deleteAllTasksForProject(projectId: String) {
-        val query = tasksRef.whereEqualTo("projectId", projectId)
-        val snapshot = query.get().await()
+        val snapshot = tasksCollection.whereEqualTo("projectId", projectId).get().await()
         val batch = firestore.batch()
-        snapshot.documents.forEach { doc ->
-            batch.delete(doc.reference)
-        }
+        snapshot.documents.forEach { batch.delete(it.reference) }
         batch.commit().await()
     }
 
     suspend fun deleteAllInvitationsForProject(projectId: String) {
-        val query = invitationsRef.whereEqualTo("projectId", projectId)
-        val snapshot = query.get().await()
+        val snapshot = invitationsCollection.whereEqualTo("projectId", projectId).get().await()
         val batch = firestore.batch()
-        snapshot.documents.forEach { doc ->
-            batch.delete(doc.reference)
-        }
+        snapshot.documents.forEach { batch.delete(it.reference) }
         batch.commit().await()
     }
 
     suspend fun deleteAllMembersForProject(projectId: String) {
-        val query = membersRef.whereEqualTo("projectId", projectId)
-        val snapshot = query.get().await()
+        val membersSnapshot = projectsCollection.document(projectId)
+            .collection(MEMBERS_SUBCOLLECTION)
+            .get()
+            .await()
         val batch = firestore.batch()
-        snapshot.documents.forEach { doc ->
-            batch.delete(doc.reference)
+        membersSnapshot.documents.forEach { batch.delete(it.reference) }
+
+        val legacySnapshots = listOf(
+            firestore.collection(LEGACY_MEMBERS_COLLECTION).whereEqualTo("projectId", projectId).get().await(),
+            firestore.collection(LEGACY_MEMBERS_COLLECTION_CAMEL).whereEqualTo("projectId", projectId).get().await()
+        )
+        legacySnapshots.forEach { snapshot ->
+            snapshot.documents.forEach { batch.delete(it.reference) }
         }
         batch.commit().await()
     }
@@ -69,6 +88,7 @@ class FirebaseProjectSource @Inject constructor(
             projectsCollection.document(projectId).delete().await()
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e(TAG, "deleteProject failed", e)
             Result.failure(e)
         }
     }
@@ -77,14 +97,21 @@ class FirebaseProjectSource @Inject constructor(
         return try {
             val userId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
-
             if (projectDto.ownerId != userId) {
                 return Result.failure(IllegalAccessException("Not authorized to update this project"))
             }
 
-            projectsCollection.document(projectDto.id).set(projectDto).await()
-            Result.success(projectDto)
+            val normalizedMembers = projectDto.members.ifEmpty { listOf(userId) }.distinct()
+            val normalizedProject = projectDto.copy(
+                members = normalizedMembers,
+                memberIds = normalizedMembers
+            )
+            projectsCollection.document(normalizedProject.id)
+                .set(normalizedProject, SetOptions.merge())
+                .await()
+            Result.success(normalizedProject)
         } catch (e: Exception) {
+            Log.e(TAG, "updateProject failed", e)
             Result.failure(e)
         }
     }
@@ -94,88 +121,48 @@ class FirebaseProjectSource @Inject constructor(
             val userId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
 
-            val snapshot = projectsCollection
-                .whereEqualTo("userId", userId)
-                .get()
-                .await()
-
-            val projects = snapshot.documents.mapNotNull { it.toObject(ProjectDto::class.java) }
+            val ownedSnapshot = projectsCollection.whereEqualTo("ownerId", userId).get().await()
+            val memberSnapshot = projectsCollection.whereArrayContains("members", userId).get().await()
+            val projects = (ownedSnapshot.documents + memberSnapshot.documents)
+                .distinctBy { it.id }
+                .mapNotNull { doc -> doc.toDto<ProjectDto>()?.copy(id = doc.id) }
             Result.success(projects)
         } catch (e: Exception) {
+            Log.e(TAG, "getAllProjects failed", e)
             Result.failure(e)
         }
-
     }
 
     suspend fun getProjectById(projectId: String): Result<ProjectDto?> {
         return try {
-            Log.d("ProjectMembersDebug", "FirebaseProjectSource: getProjectById called for projectId: $projectId")
-            val document = projectsCollection.document(projectId).get().await()
-            val project = document.toObject(ProjectDto::class.java)
-            Log.d("ProjectMembersDebug", "FirebaseProjectSource: Project loaded from Firebase: ${project?.title}")
-            Log.d("ProjectMembersDebug", "FirebaseProjectSource: Project members array: ${project?.members}")
+            val project = projectsCollection.document(projectId).get().await()
+                .toDto<ProjectDto>()
+                ?.copy(id = projectId)
             Result.success(project)
         } catch (e: Exception) {
-            Log.e("ProjectMembersDebug", "FirebaseProjectSource: Error getting project by ID", e)
+            Log.e(TAG, "getProjectById failed", e)
             Result.failure(e)
         }
     }
 
     suspend fun getProjectMembers(projectId: String): Result<List<ProjectMemberDto>> {
-        val debugTag = "TaskCreationDebug"
-        Log.d(debugTag, "FirebaseProjectSource: getProjectMembers called for projectId: $projectId")
-        Log.d("ProjectMembersDebug", "FirebaseProjectSource: getProjectMembers called for projectId: $projectId")
-        
         return try {
-            val userId = auth.currentUser?.uid
-                ?: return Result.failure(IllegalStateException("User not authenticated"))
+            migrateLegacyMembersIfNeeded(projectId)
 
-            Log.d("ProjectMembersDebug", "FirebaseProjectSource: Current user ID: $userId")
-            
-            // Get the project to check if current user is a member
-            val projectSnapshot = firestore.collection("projects").document(projectId).get().await()
-            if (!projectSnapshot.exists()) {
-                Log.e("ProjectMembersDebug", "FirebaseProjectSource: Project not found")
-                return Result.failure(IllegalStateException("Project not found"))
+            val snapshot = projectsCollection.document(projectId)
+                .collection(MEMBERS_SUBCOLLECTION)
+                .get()
+                .await()
+
+            val members = snapshot.documents.mapNotNull { doc ->
+                doc.toDto<ProjectMemberDto>()?.copy(
+                    projectId = projectId,
+                    userId = doc.id
+                )
             }
-
-            val projectData = projectSnapshot.data
-            val members = projectData?.get("members") as? List<String> ?: emptyList()
-            Log.d("ProjectMembersDebug", "FirebaseProjectSource: Project members array: $members")
-            Log.d("ProjectMembersDebug", "FirebaseProjectSource: Is current user in project members: ${members.contains(userId)}")
-
-            // Fetch members from the subcollection
-            val membersSnapshot = firestore.collection("projects").document(projectId)
-                .collection("members").get().await()
-
-            Log.d("ProjectMembersDebug", "FirebaseProjectSource: Found ${membersSnapshot.documents.size} members in subcollection")
-
-            val memberDtos = membersSnapshot.documents.mapNotNull { doc ->
-                try {
-                    val email = doc.getString("email") ?: "user@example.com"
-                    val displayName = doc.getString("displayName") ?: "User"
-                    val role = doc.getString("role") ?: "MEMBER"
-                    val memberUserId = doc.id
-
-                    Log.d("ProjectMembersDebug", "FirebaseProjectSource: Member data from subcollection - email: $email, displayName: $displayName, role: $role, userId: $memberUserId")
-
-                    ProjectMemberDto(
-                        projectId = projectId,
-                        userId = memberUserId,
-                        email = email,
-                        displayName = displayName,
-                        role = role
-                    )
-                } catch (e: Exception) {
-                    Log.e("ProjectMembersDebug", "FirebaseProjectSource: Error parsing member document", e)
-                    null
-                }
-            }
-
-            Log.d("ProjectMembersDebug", "FirebaseProjectSource: Returning ${memberDtos.size} members")
-            Result.success(memberDtos)
+            Result.success(members.sortedBy { it.displayName.lowercase() })
         } catch (e: Exception) {
-            Log.e("ProjectMembersDebug", "FirebaseProjectSource: Error getting project members", e)
+            Log.e(TAG, "getProjectMembers failed for $projectId", e)
             Result.failure(e)
         }
     }
@@ -184,91 +171,151 @@ class FirebaseProjectSource @Inject constructor(
         return try {
             val userId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
-
-            // Verify the inviter is the current user
             if (invitationDto.inviterId != userId) {
                 return Result.failure(IllegalAccessException("Not authorized to send this invitation"))
             }
 
-            // Create the invitation in Firestore
             invitationsCollection.document(invitationDto.id).set(invitationDto).await()
             Result.success(invitationDto)
         } catch (e: Exception) {
+            Log.e(TAG, "createInvitation failed", e)
             Result.failure(e)
         }
     }
-
-
 
     suspend fun addProjectMember(projectId: String, member: ProjectMemberDto): Result<Unit> {
         return try {
-            Log.d("sahoor", "[addProjectMember] Called with projectId=$projectId, member=$member")
-            val userId = auth.currentUser?.uid
+            val currentUserId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
 
-            // Verify the project exists
-            val projectDoc = projectsCollection.document(projectId).get().await()
-            Log.d("sahoor", "[addProjectMember] Fetched projectDoc: exists=${projectDoc.exists()}")
-            val project = projectDoc.toObject(ProjectDto::class.java)
-            Log.d("sahoor", "[addProjectMember] ProjectDto: $project")
-            if (project == null) {
-                Log.e("sahoor", "[addProjectMember] Project not found for id=$projectId")
-                return Result.failure(IllegalStateException("Project not found"))
+            val projectSnapshot = projectsCollection.document(projectId).get().await()
+            val project = projectSnapshot.toDto<ProjectDto>()
+                ?: return Result.failure(IllegalStateException("Project not found"))
+
+            if (project.ownerId != currentUserId && member.userId != currentUserId) {
+                return Result.failure(IllegalAccessException("Not authorized to add this member"))
             }
-
-            // Create a reference to the members subcollection within the project
-            val membersSubcollection = projectsCollection.document(projectId).collection("members")
-
-            // Add the member to the subcollection, using member's userId as document ID
-            Log.d("sahoor", "[addProjectMember] Adding member to subcollection: userId=${member.userId}")
-            membersSubcollection.document(member.userId)
-                .set(member)
-                .await()
-            Log.d("sahoor", "[addProjectMember] Member added to subcollection")
-
-            // Still update the members array in the project document
-            val updatedMembers = project.members.toMutableList().apply {
-                add(member.userId)
-            }
-            Log.d("sahoor", "[addProjectMember] Updating project members array: $updatedMembers")
 
             projectsCollection.document(projectId)
-                .update("members", updatedMembers)
+                .collection(MEMBERS_SUBCOLLECTION)
+                .document(member.userId)
+                .set(member.copy(projectId = projectId))
                 .await()
-            Log.d("sahoor", "[addProjectMember] Project members array updated")
+
+            projectsCollection.document(projectId)
+                .update(
+                    mapOf(
+                        "members" to FieldValue.arrayUnion(member.userId),
+                        "memberIds" to FieldValue.arrayUnion(member.userId)
+                    )
+                )
+                .await()
 
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e("sahoor", "[addProjectMember] Error adding project member", e)
+            Log.e(TAG, "addProjectMember failed", e)
             Result.failure(e)
         }
     }
 
+    suspend fun removeProjectMember(projectId: String, userId: String): Result<Unit> {
+        return try {
+            val currentUserId = auth.currentUser?.uid
+                ?: return Result.failure(IllegalStateException("User not authenticated"))
+            val project = projectsCollection.document(projectId).get().await().toDto<ProjectDto>()
+                ?: return Result.failure(IllegalStateException("Project not found"))
+            if (project.ownerId != currentUserId) {
+                return Result.failure(IllegalAccessException("Only owners can remove members"))
+            }
+
+            val batch = firestore.batch()
+            batch.delete(
+                projectsCollection.document(projectId)
+                    .collection(MEMBERS_SUBCOLLECTION)
+                    .document(userId)
+            )
+            batch.update(
+                projectsCollection.document(projectId),
+                mapOf(
+                    "members" to FieldValue.arrayRemove(userId),
+                    "memberIds" to FieldValue.arrayRemove(userId)
+                )
+            )
+            batch.commit().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "removeProjectMember failed", e)
+            Result.failure(e)
+        }
+    }
 
     suspend fun updateInvitation(invitationDto: ProjectInvitationDto): Result<ProjectInvitationDto> {
         return try {
-            // Update the invitation in Firestore
-            invitationsCollection.document(invitationDto.id).set(invitationDto).await()
+            invitationsCollection.document(invitationDto.id).set(invitationDto, SetOptions.merge()).await()
             Result.success(invitationDto)
         } catch (e: Exception) {
+            Log.e(TAG, "updateInvitation failed", e)
             Result.failure(e)
         }
     }
 
     suspend fun getInvitations(userId: String): Result<List<ProjectInvitationDto>> {
         return try {
-            // Get invitations where the user is the invitee
-            val snapshot = invitationsCollection
-                .whereEqualTo("inviteeId", userId)
-                .get()
-                .await()
-
-            val invitations =
-                snapshot.documents.mapNotNull { it.toObject(ProjectInvitationDto::class.java) }
+            val email = auth.currentUser?.email
+            val queries = buildList {
+                add(invitationsCollection.whereEqualTo("inviteeId", userId).get().await())
+                if (!email.isNullOrBlank()) {
+                    add(invitationsCollection.whereEqualTo("inviteeEmail", email).get().await())
+                }
+            }
+            val invitations = queries
+                .flatMap { it.documents }
+                .distinctBy { it.id }
+                .mapNotNull { it.toDto<ProjectInvitationDto>()?.copy(id = it.id) }
             Result.success(invitations)
         } catch (e: Exception) {
+            Log.e(TAG, "getInvitations failed", e)
             Result.failure(e)
         }
     }
 
+    private suspend fun migrateLegacyMembersIfNeeded(projectId: String) {
+        val subcollection = projectsCollection.document(projectId).collection(MEMBERS_SUBCOLLECTION)
+        if (!subcollection.get().await().isEmpty) {
+            return
+        }
+
+        val legacyDocs = (
+            firestore.collection(LEGACY_MEMBERS_COLLECTION).whereEqualTo("projectId", projectId).get().await().documents +
+                firestore.collection(LEGACY_MEMBERS_COLLECTION_CAMEL).whereEqualTo("projectId", projectId).get().await().documents
+            )
+            .distinctBy { "${it.getString("projectId")}:${it.getString("userId") ?: it.id}" }
+
+        if (legacyDocs.isEmpty()) {
+            return
+        }
+
+        val batch = firestore.batch()
+        val memberIds = mutableListOf<String>()
+        legacyDocs.forEach { doc ->
+            val mappedMember = doc.toDto<ProjectMemberDto>()?.copy(
+                projectId = projectId,
+                userId = doc.getString("userId") ?: doc.id
+            ) ?: return@forEach
+            memberIds += mappedMember.userId
+            batch.set(subcollection.document(mappedMember.userId), mappedMember)
+        }
+        if (memberIds.isNotEmpty()) {
+            batch.update(
+                projectsCollection.document(projectId),
+                mapOf(
+                    "members" to memberIds.distinct(),
+                    "memberIds" to memberIds.distinct()
+                )
+            )
+        }
+        batch.commit().await()
+    }
+
+    private inline fun <reified T> DocumentSnapshot.toDto(): T? = toObject(T::class.java)
 }

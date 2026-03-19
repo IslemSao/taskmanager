@@ -201,37 +201,52 @@ class FirebaseUserSource @Inject constructor(
         }
 
         Log.d("FirestoreListener", "Setting up listener for tasks for user: $userId")
-        var taskListener: ListenerRegistration? = null
+        val registrations = mutableListOf<ListenerRegistration>()
+        val latestTasksByQuery = linkedMapOf<String, List<TaskDto>>()
 
-        val query = firestore.collection("tasks").whereEqualTo("userId", userId)
-        taskListener = query.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                Log.e("FirestoreListener", "Tasks listener error", error)
-                trySend(Result.failure(error))
-                // close(error) // Close flow on error?
-                return@addSnapshotListener
+        fun emitCombinedTasks() {
+            val combined = latestTasksByQuery.values
+                .flatten()
+                .distinctBy { it.id }
+                .sortedByDescending { it.modifiedAt }
+            Log.d("FirestoreListener", "Sending tasks update: ${combined.size} tasks")
+            trySend(Result.success(combined))
+        }
+
+        fun attachTaskListener(key: String, field: String, useArrayContains: Boolean = false) {
+            val query = if (useArrayContains) {
+                firestore.collection("tasks").whereArrayContains(field, userId)
+            } else {
+                firestore.collection("tasks").whereEqualTo(field, userId)
             }
-            if (snapshot != null) {
-                Log.d(
-                    "FirestoreListener",
-                    "Tasks snapshot received: ${snapshot.documents.size} docs"
-                )
-                val tasks = snapshot.documents.mapNotNull { doc ->
+            val registration = query.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("FirestoreListener", "Tasks listener error for $field", error)
+                    trySend(Result.failure(error))
+                    return@addSnapshotListener
+                }
+                val tasks = snapshot?.documents?.mapNotNull { doc ->
                     try {
                         doc.toObject(TaskDto::class.java)?.copy(id = doc.id)
                     } catch (e: Exception) {
                         Log.e("FirestoreListener", "Failed to map task document ${doc.id}", e)
                         null
                     }
-                }
-                Log.d("FirestoreListener", "Sending tasks update: ${tasks.size} tasks")
-                trySend(Result.success(tasks))
+                } ?: emptyList()
+                latestTasksByQuery[key] = tasks
+                emitCombinedTasks()
             }
+            registrations += registration
         }
+
+        attachTaskListener("visible", "visibleToUserIds", useArrayContains = true)
+        attachTaskListener("creator", "createdBy")
+        attachTaskListener("assignee", "assignedTo")
+        attachTaskListener("owner", "userId")
 
         awaitClose {
             Log.d("FirestoreListener", "Closing task listener for user: $userId")
-            taskListener?.remove()
+            registrations.forEach { it.remove() }
         }
     }
 

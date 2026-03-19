@@ -465,16 +465,14 @@ class UserRepositoryImpl @Inject constructor(
                 // 5. Delete local tasks no longer present remotely
                 if (idsToDelete.isNotEmpty()) {
                     Log.d("UserRepository", "Deleting ${idsToDelete.size} local tasks: $idsToDelete")
-                    val deleteCount = taskDao.deleteByIds(idsToDelete.toList()) // Use existing DAO method
-                    Log.d("UserRepository", "Actual tasks deleted count: $deleteCount")
+                    taskDao.deleteByIds(idsToDelete.toList())
                 }
 
                 // 6. Upsert the valid entities received from remote
                 if (taskEntities.isNotEmpty()) {
                     Log.d("UserRepository", "Upserting ${taskEntities.size} valid tasks locally.")
-                    val upsertResult = taskDao.upsertAll(taskEntities) // Use existing DAO method
-                    // upsertResult might be List<Long> of row IDs, or Unit depending on DAO
-                    Log.d("UserRepository", "Task upsert completed.") // Affected rows info might not be available directly from upsertAll
+                    taskDao.upsertAll(taskEntities)
+                    Log.d("UserRepository", "Task upsert completed.")
                 } else if (taskDtos.isNotEmpty() && validTaskDtos.isEmpty()) {
                     Log.d("UserRepository", "No currently valid tasks to upsert, all pending project availability.")
                 }
@@ -525,25 +523,8 @@ class UserRepositoryImpl @Inject constructor(
 
             if (tasksToRetryNow.isNotEmpty()) {
                 Log.i("UserRepository", "Retrying ${tasksToRetryNow.size} tasks whose projects are now available.")
-                val retryEntities = tasksToRetryNow.map { dto -> /* ... Map DTO to Entity ... */
-                    TaskEntity( /* ... mapping ... */
-                        id = dto.id, title = dto.title, description = dto.description, dueDate = dto.dueDate, completed = dto.completed,
-                        priority = try { Priority.valueOf(dto.priority.uppercase()) } catch (e: Exception) { Priority.MEDIUM },
-                        projectId = dto.projectId, labels = dto.labels ?: emptyList(),
-                        subtasks = dto.subtasks?.mapNotNull { subtaskMap ->
-                            try {
-                                Subtask(
-                                    id = subtaskMap["id"] as? String ?: return@mapNotNull null, // Require ID
-                                    title = subtaskMap["title"] as? String ?: "",
-                                    isCompleted = subtaskMap["isCompleted"] as? Boolean ?: false
-                                )
-                            } catch (e: Exception) {
-                                Log.e("UserRepository", "Error mapping subtask: $subtaskMap", e)
-                                null
-                            }
-                        } ?: emptyList(),
-                        createdAt = dto.createdAt, modifiedAt = dto.modifiedAt, syncStatus = SyncStatus.SYNCED, userId = dto.userId
-                    )
+                val retryEntities = tasksToRetryNow.map { dto ->
+                    taskMapper.domainToEntity(taskMapper.dtoToDomain(dto))
                 }
                 try {
                     // Retry the upsert for these specific tasks

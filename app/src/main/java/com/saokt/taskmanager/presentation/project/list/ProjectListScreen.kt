@@ -1,14 +1,7 @@
 package com.saokt.taskmanager.presentation.project.list
 
-import android.util.Log
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,11 +19,10 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,7 +37,6 @@ import androidx.navigation.NavController
 import com.saokt.taskmanager.domain.model.Project
 import com.saokt.taskmanager.domain.model.ProjectMember
 import com.saokt.taskmanager.presentation.navigation.Screen
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 import androidx.compose.material3.SwipeToDismissBox
@@ -62,15 +53,6 @@ fun ProjectListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    // Track projects being swiped
-    var swipedProjectId by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(Unit) {
-        viewModel.loadProjects()
-        viewModel.loadTasks()
-    }
-
-    // Handle errors
     LaunchedEffect(state.error) {
         state.error?.let {
             snackbarHostState.showSnackbar(it)
@@ -78,6 +60,16 @@ fun ProjectListScreen(
         }
     }
     Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Projects") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.navigateUp() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
@@ -91,7 +83,8 @@ fun ProjectListScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
-    ) { padding ->        if (state.isLoading) {
+    ) { padding ->
+        if (state.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -134,17 +127,13 @@ fun ProjectListScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(
-                    items = state.projects,
-                    key = { it.id }
-                ) { project ->
-                    // Track if we need to reset the dismiss state
+                items(items = state.projects, key = { it.id }) { project ->
                     var shouldResetDismissState by remember { mutableStateOf(false) }
+                    val canDeleteProject = state.currentUser?.id == project.ownerId
 
                     val dismissState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { dismissValue ->
                             if (dismissValue == SwipeToDismissBoxValue.EndToStart) {
-                                swipedProjectId = project.id
                                 scope.launch {
                                     val result = snackbarHostState.showSnackbar(
                                         message = "Delete '${project.title}'?",
@@ -161,7 +150,6 @@ fun ProjectListScreen(
                                             shouldResetDismissState = true
                                         }
                                     }
-                                    swipedProjectId = null
                                 }
                                 false
                             } else {
@@ -171,7 +159,6 @@ fun ProjectListScreen(
                         positionalThreshold = { totalDistance -> totalDistance * 0.6f }
                     )
 
-                    // Reset dismiss state if needed
                     LaunchedEffect(shouldResetDismissState) {
                         if (shouldResetDismissState) {
                             dismissState.reset()
@@ -179,45 +166,48 @@ fun ProjectListScreen(
                         }
                     }
 
-                    SwipeToDismissBox(
-                        state = dismissState,
-                        enableDismissFromStartToEnd = false,
-                        backgroundContent = {
-                            val swipeProgress = when {
-                                dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart -> {
-                                    dismissState.progress
+                    if (canDeleteProject) {
+                        SwipeToDismissBox(
+                            state = dismissState,
+                            enableDismissFromStartToEnd = false,
+                            backgroundContent = {
+                                val swipeProgress = when {
+                                    dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart -> {
+                                        dismissState.progress
+                                    }
+                                    else -> 0f
                                 }
-                                else -> 0f
-                            }
 
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = swipeProgress))
-                                    .padding(end = 16.dp),
-                                contentAlignment = Alignment.CenterEnd
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete",
-                                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                                    modifier = Modifier.alpha(swipeProgress)
-                                )
-                            }
-                        },
-                        content = {
-                            AnimatedVisibility(
-                                visible = state.projects.any { it.id == project.id },
-                                exit = shrinkVertically(animationSpec = spring()) + fadeOut()
-                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = swipeProgress))
+                                        .padding(end = 16.dp),
+                                    contentAlignment = Alignment.CenterEnd
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete project",
+                                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.alpha(swipeProgress)
+                                    )
+                                }
+                            },
+                            content = {
                                 ProjectCard(
                                     project = project,
                                     onClick = { navController.navigate(Screen.ProjectTasks.createRoute(project.id)) },
                                     members = state.members.filter { it.projectId == project.id }
                                 )
                             }
-                        }
-                    )
+                        )
+                    } else {
+                        ProjectCard(
+                            project = project,
+                            onClick = { navController.navigate(Screen.ProjectTasks.createRoute(project.id)) },
+                            members = state.members.filter { it.projectId == project.id }
+                        )
+                    }
                 }
             }
         }
@@ -230,8 +220,8 @@ fun ProjectCard(
     onClick: () -> Unit,
     members: List<ProjectMember>
 ) {
-    val projectColor = Color(project.color ?: 0x000)  // Convert stored color int to Compose Color
-       Card(
+    val projectColor = Color(project.color ?: MaterialTheme.colorScheme.primary.value.toInt())
+    Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
@@ -244,7 +234,7 @@ fun ProjectCard(
         ),
         shape = MaterialTheme.shapes.large
     ) {
-        Column {            // Header with color indicator
+        Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

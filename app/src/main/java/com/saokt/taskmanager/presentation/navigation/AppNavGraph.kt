@@ -1,8 +1,7 @@
 package com.saokt.taskmanager.presentation.navigation
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -82,17 +81,22 @@ fun AppNavGraph(startDestination: String = Screen.SignIn.route) {
         composable(
             route = Screen.TaskDetail.route,
             arguments = listOf(
-                navArgument("taskId") {
+                navArgument("taskId") { type = NavType.StringType },
+                navArgument("projectId") {
                     type = NavType.StringType
-                }
+                    nullable = true
+                    defaultValue = null
+                },
             )
         ) { backStackEntry ->
-            val taskId = backStackEntry.arguments?.getString("taskId") ?: "new"
+            val taskId = Uri.decode(backStackEntry.arguments?.getString("taskId") ?: "new")
+            val projectId = backStackEntry.arguments?.getString("projectId")?.let(Uri::decode)
             val viewModel: TaskDetailViewModel = hiltViewModel()
             TaskDetailScreen(
                 navController = navController,
                 viewModel = viewModel,
-                taskId = taskId
+                taskId = taskId,
+                initialProjectId = projectId
             )
         }
 
@@ -193,6 +197,14 @@ fun AppNavGraph(startDestination: String = Screen.SignIn.route) {
             )
         }
 
+        composable(route = Screen.Invitations.route) {
+            val viewModel: InvitationsViewModel = hiltViewModel()
+            InvitationsScreen(
+                navController = navController,
+                viewModel = viewModel
+            )
+        }
+
         composable(route = Screen.Calendar.route) {
             val viewModel: CalendarViewModel = hiltViewModel()
             CalendarScreen(
@@ -214,10 +226,10 @@ fun AppNavGraph(startDestination: String = Screen.SignIn.route) {
                 navArgument("currentUserId") { type = NavType.StringType }
             )
         ) { entry ->
-            val projectId = entry.arguments?.getString("projectId") ?: ""
-            val taskId = entry.arguments?.getString("taskId")
-            val participants = entry.arguments?.getString("participants") ?: ""
-            val currentUserId = entry.arguments?.getString("currentUserId") ?: ""
+            val projectId = Uri.decode(entry.arguments?.getString("projectId") ?: "")
+            val taskId = entry.arguments?.getString("taskId")?.let(Uri::decode)?.takeIf { it.isNotBlank() }
+            val participants = Uri.decode(entry.arguments?.getString("participants") ?: "")
+            val currentUserId = Uri.decode(entry.arguments?.getString("currentUserId") ?: "")
             ChatScreen(
                 navController = navController,
                 projectId = projectId,

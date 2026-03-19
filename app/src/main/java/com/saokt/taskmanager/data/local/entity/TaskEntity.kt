@@ -38,5 +38,6 @@ data class TaskEntity(
     val userId: String? = null, // Optional userId for multi-user support
     val createdBy: String = "",
     val assignedTo: String? = null,
-    val assignedBy: String? = null
+    val assignedBy: String? = null,
+    val visibleToUserIds: List<String> = emptyList()
 )

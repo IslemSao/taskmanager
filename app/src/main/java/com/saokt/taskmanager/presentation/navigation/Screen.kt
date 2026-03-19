@@ -1,12 +1,18 @@
 package com.saokt.taskmanager.presentation.navigation
 
+import android.net.Uri
+
 sealed class Screen(val route: String) {
     object SignIn : Screen("sign_in")
     object SignUp : Screen("sign_up")
     object Dashboard : Screen("dashboard")
     object TaskList : Screen("task_list")
-    object TaskDetail : Screen("task_detail/{taskId}") {
-        fun createRoute(taskId: String = "new") = "task_detail/$taskId"
+    object TaskDetail : Screen("task_detail/{taskId}?projectId={projectId}") {
+        fun createRoute(taskId: String = "new", projectId: String? = null): String {
+            val encodedTaskId = Uri.encode(taskId)
+            val encodedProjectId = projectId?.let(Uri::encode).orEmpty()
+            return "task_detail/$encodedTaskId?projectId=$encodedProjectId"
+        }
     }
     object ProjectList : Screen("project_list")
     object ProjectDetail : Screen("project_detail/{projectId}") {
@@ -26,8 +32,11 @@ sealed class Screen(val route: String) {
     object Profile : Screen("profile")
     object Chat : Screen("chat/{projectId}?taskId={taskId}&participants={participants}&currentUserId={currentUserId}") {
         fun createRoute(projectId: String, taskId: String?, participantsCsv: String, currentUserId: String): String {
-            val t = taskId ?: ""
-            return "chat/$projectId?taskId=$t&participants=$participantsCsv&currentUserId=$currentUserId"
+            val encodedProjectId = Uri.encode(projectId)
+            val encodedTaskId = Uri.encode(taskId.orEmpty())
+            val encodedParticipants = Uri.encode(participantsCsv)
+            val encodedCurrentUserId = Uri.encode(currentUserId)
+            return "chat/$encodedProjectId?taskId=$encodedTaskId&participants=$encodedParticipants&currentUserId=$encodedCurrentUserId"
         }
     }
 }

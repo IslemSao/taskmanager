@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.saokt.taskmanager.R
+import com.saokt.taskmanager.data.util.FirebaseConfig
 import com.saokt.taskmanager.presentation.navigation.Screen
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -198,8 +199,13 @@ fun SignInScreen(
                     onClick = {
                         // Request Google sign-in with forced account picker
                         Log.d(TAG, "Google Sign-In button clicked.")
+                        val webClientId = FirebaseConfig.getGoogleWebClientId(context)
+                        if (webClientId.isNullOrBlank()) {
+                            viewModel.setError("Google sign-in is not configured for this build.")
+                            return@OutlinedButton
+                        }
                         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                            .requestIdToken(context.getString(R.string.default_web_client_id))
+                            .requestIdToken(webClientId)
                             .requestEmail()
                             .build()
                         val googleSignInClient = GoogleSignIn.getClient(context, gso)

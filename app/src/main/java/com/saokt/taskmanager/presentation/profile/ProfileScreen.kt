@@ -224,7 +224,7 @@ private fun ProfileContent(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Once you delete your account, there is no going back. This will permanently delete your account and all associated data including projects, tasks, and invitations.",
+                    text = "Once you delete your account, there is no going back. Projects you own will be deleted, shared projects will lose your membership, and your tasks, invitations, and notification history will be removed.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

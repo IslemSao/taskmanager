@@ -11,6 +11,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
+import com.saokt.taskmanager.data.util.FirebaseConfig
 import com.saokt.taskmanager.notification.FCMTokenManager
 import com.saokt.taskmanager.presentation.authentication.AuthViewModel
 import com.saokt.taskmanager.presentation.navigation.AppNavGraph
@@ -89,6 +90,11 @@ class MainActivity : ComponentActivity() {
      * Refresh FCM token and update it in Firestore
      */
     private fun refreshFCMToken() {
+        if (!FirebaseConfig.isConfigured(this)) {
+            Log.w("MainActivity", "Skipping FCM token refresh because Firebase is not configured.")
+            return
+        }
+
         lifecycleScope.launch {
             try {
                 val result = fcmTokenManager.refreshAndUpdateToken()

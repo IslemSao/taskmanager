@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import androidx.work.WorkManager
+import com.saokt.taskmanager.data.util.FirebaseConfig
 import com.saokt.taskmanager.data.util.SyncManager
 import com.saokt.taskmanager.notification.TaskNotificationScheduler
 import dagger.hilt.android.HiltAndroidApp
@@ -20,10 +21,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import javax.inject.Provider
 
 @HiltAndroidApp
 class MainApplication : Application(), Configuration.Provider {
-    @Inject lateinit var syncManager: SyncManager
+    @Inject lateinit var syncManagerProvider: Provider<SyncManager>
     @Inject lateinit var notificationScheduler: TaskNotificationScheduler
     @Inject lateinit var workerFactory: HiltWorkerFactory
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -31,14 +33,15 @@ class MainApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
 
-        // Schedule periodic sync
-        syncManager.schedulePeriodicSync()
-
         // Start notification scheduling
         notificationScheduler.startNotificationScheduling()
 
-        // Set up network listener to trigger sync when connectivity is restored
-        setupNetworkCallback()
+        if (FirebaseConfig.isConfigured(this)) {
+            syncManagerProvider.get().schedulePeriodicSync()
+            setupNetworkCallback()
+        } else {
+            Log.w("MainApplication", "Firebase config is missing. Running without remote sync.")
+        }
     }
 
     override fun onTerminate() {
@@ -55,8 +58,10 @@ class MainApplication : Application(), Configuration.Provider {
             override fun onAvailable(network: Network) {
                 super.onAvailable(network)
                 // Network is available, trigger sync
-                println("Network available - triggering sync")
-                syncManager.scheduleOneTimeSync()
+                Log.d("MainApplication", "Network available - triggering sync")
+                if (FirebaseConfig.isConfigured(this@MainApplication)) {
+                    syncManagerProvider.get().scheduleOneTimeSync()
+                }
             }
         }
 

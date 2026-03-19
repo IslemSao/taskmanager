@@ -42,7 +42,7 @@ fun NotificationSettingsScreen(
             TopAppBar(
                 title = { 
                     Text(
-                        text = "Enhanced Notification Settings",
+                        text = "Notification Settings",
                         style = MaterialTheme.typography.titleLarge
                     ) 
                 },
@@ -110,7 +110,7 @@ private fun EnhancedNotificationSettingsContent(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                            text = "🔔 Master Notifications",
+                            text = "Master Notifications",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary
                             )
@@ -138,7 +138,7 @@ private fun EnhancedNotificationSettingsContent(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                    text = "🌙 Quiet Hours",
+                    text = "Quiet Hours",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -234,7 +234,7 @@ private fun EnhancedNotificationSettingsContent(
 
         // Notification Types Section
         Text(
-            text = "📋 Notification Types",
+            text = "Notification Types",
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.primary
         )
@@ -243,44 +243,9 @@ private fun EnhancedNotificationSettingsContent(
             NotificationTypeCard(
                 preference = preference,
                 onToggle = { viewModel.toggleNotificationType(preference.type, it) },
-                onTest = { viewModel.testNotification(preference.type) },
                 onUpdatePriority = { viewModel.updateNotificationPriority(preference.type, it) }
             )
-            }
-
-            // Action Buttons
-            Column(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(vertical = 16.dp)
-            ) {
-                            Button(
-                onClick = { viewModel.testNotification(NotificationType.TASK_REMINDER) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("🔔 Test Default Notification")
-            }
-
-            OutlinedButton(
-                onClick = { viewModel.testPersistence() },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("💾 Test Persistence")
-            }
-
-            OutlinedButton(
-                onClick = { viewModel.testQuietHours() },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("🌙 Test Quiet Hours")
-            }
-
-            OutlinedButton(
-                onClick = { viewModel.resetToDefaults() },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("🔄 Reset to Defaults")
-            }
-            }
+        }
 
             // Status Information
             Card(
@@ -294,18 +259,18 @@ private fun EnhancedNotificationSettingsContent(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                    text = "📊 Status",
+                    text = "Status",
                         style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Text(
-                    text = "Master notifications: ${if (state.globalSettings.masterNotificationsEnabled) "✅ Enabled" else "❌ Disabled"}",
+                    text = "Master notifications: ${if (state.globalSettings.masterNotificationsEnabled) "Enabled" else "Disabled"}",
                     style = MaterialTheme.typography.bodyMedium
                 )
 
                 Text(
-                    text = "Quiet hours: ${if (state.globalSettings.quietHoursEnabled) "🌙 Active" else "☀️ Inactive"}",
+                    text = "Quiet hours: ${if (state.globalSettings.quietHoursEnabled) "Active" else "Inactive"}",
                     style = MaterialTheme.typography.bodyMedium
                 )
 
@@ -323,7 +288,6 @@ private fun EnhancedNotificationSettingsContent(
 private fun NotificationTypeCard(
     preference: NotificationPreference,
     onToggle: (Boolean) -> Unit,
-    onTest: () -> Unit,
     onUpdatePriority: (NotificationPriority) -> Unit
 ) {
     Card(
@@ -411,13 +375,6 @@ private fun NotificationTypeCard(
                     )
                 }
 
-                // Test Button
-                OutlinedButton(
-                    onClick = onTest,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("🔔 Test This Notification")
-                }
             }
         }
     }
@@ -425,19 +382,19 @@ private fun NotificationTypeCard(
 
 private fun getNotificationTypeDisplayName(type: NotificationType): String {
     return when (type) {
-        NotificationType.TASK_REMINDER -> "📝 Task Reminders"
-        NotificationType.DUE_SOON_ALERT -> "⏰ Due Soon Alerts"
-        NotificationType.OVERDUE_ALERT -> "⚠️ Overdue Alerts"
-        NotificationType.HIGH_PRIORITY_REMINDER -> "🔥 High Priority Reminders"
-        NotificationType.PROJECT_UPDATE -> "📁 Project Updates"
-        NotificationType.ASSIGNMENT_UPDATE -> "👤 Assignment Updates"
-        NotificationType.COMPLETION_CELEBRATION -> "🎉 Completion Celebrations"
-        NotificationType.STREAK_REMINDER -> "🔥 Streak Reminders"
-        NotificationType.DEADLINE_WARNING -> "⚡ Deadline Warnings"
-        NotificationType.WEEKLY_SUMMARY -> "📊 Weekly Summaries"
-        NotificationType.MORNING_BRIEFING -> "🌅 Morning Briefings"
-    NotificationType.EVENING_REVIEW -> "🌙 Evening Reviews"
-    NotificationType.CHAT_MESSAGE -> "💬 Chat Messages"
+        NotificationType.TASK_REMINDER -> "Task Reminders"
+        NotificationType.DUE_SOON_ALERT -> "Due Soon Alerts"
+        NotificationType.OVERDUE_ALERT -> "Overdue Alerts"
+        NotificationType.HIGH_PRIORITY_REMINDER -> "High Priority Reminders"
+        NotificationType.PROJECT_UPDATE -> "Project Updates"
+        NotificationType.ASSIGNMENT_UPDATE -> "Assignment Updates"
+        NotificationType.COMPLETION_CELEBRATION -> "Completion Celebrations"
+        NotificationType.STREAK_REMINDER -> "Streak Reminders"
+        NotificationType.DEADLINE_WARNING -> "Deadline Warnings"
+        NotificationType.WEEKLY_SUMMARY -> "Weekly Summaries"
+        NotificationType.MORNING_BRIEFING -> "Morning Briefings"
+        NotificationType.EVENING_REVIEW -> "Evening Reviews"
+        NotificationType.CHAT_MESSAGE -> "Chat Messages"
     }
 }
 
@@ -454,8 +411,8 @@ private fun getNotificationTypeDescription(type: NotificationType): String {
         NotificationType.DEADLINE_WARNING -> "Warnings for approaching deadlines"
         NotificationType.WEEKLY_SUMMARY -> "Weekly overview of your productivity"
         NotificationType.MORNING_BRIEFING -> "Daily morning task overview"
-    NotificationType.EVENING_REVIEW -> "Daily evening productivity review"
-    NotificationType.CHAT_MESSAGE -> "Notifications for new chat messages"
+        NotificationType.EVENING_REVIEW -> "Daily evening productivity review"
+        NotificationType.CHAT_MESSAGE -> "Notifications for new chat messages"
     }
 }
 

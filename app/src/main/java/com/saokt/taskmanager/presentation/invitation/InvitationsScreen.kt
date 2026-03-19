@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -28,11 +28,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -47,7 +51,27 @@ fun InvitationsScreen(
     viewModel: InvitationsViewModel
 ) {
     val state by viewModel.state.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.error) {
+        state.error?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
+
     Scaffold(
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text("Invitations") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.navigateUp() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->        if (state.isLoading) {
             Box(
@@ -94,6 +118,7 @@ fun InvitationsScreen(
                 items(state.invitations) { invitation ->
                     InvitationItem(
                         invitation = invitation,
+                        isProcessing = state.processingInvitationId == invitation.id,
                         onAccept = {
                             viewModel.respondToInvitation(invitation.id, true)
                         },
@@ -110,6 +135,7 @@ fun InvitationsScreen(
 @Composable
 fun InvitationItem(
     invitation: ProjectInvitation,
+    isProcessing: Boolean,
     onAccept: () -> Unit,
     onReject: () -> Unit
 ) {
@@ -158,6 +184,7 @@ fun InvitationItem(
             ) {
                 TextButton(
                     onClick = onReject,
+                    enabled = !isProcessing,
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
                     )
@@ -172,12 +199,20 @@ fun InvitationItem(
 
                 Button(
                     onClick = onAccept,
+                    enabled = !isProcessing,
                     shape = MaterialTheme.shapes.medium
                 ) {
-                    Text(
-                        "Accept",
-                        style = MaterialTheme.typography.labelLarge
-                    )
+                    if (isProcessing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.width(18.dp).height(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            "Accept",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
                 }
             }
         }

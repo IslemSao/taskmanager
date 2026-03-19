@@ -55,44 +55,80 @@ class ProjectRepositoryImpl @Inject constructor(
 
     override suspend fun createProject(project: Project): Result<Project> {
         val currentUser = userRepository.getCurrentUser().first()
+            ?: return Result.failure(IllegalStateException("User not authenticated"))
+        val ownerMember = ProjectMember(
+            projectId = project.id,
+            userId = currentUser.id,
+            email = currentUser.email,
+            displayName = currentUser.displayName ?: currentUser.email,
+            role = ProjectRole.OWNER
+        )
         val projectToSave = project.copy(
             createdAt = Date(),
             modifiedAt = Date(),
             syncStatus = SyncStatus.PENDING,
-            ownerId = currentUser?.id ?: ""
+            ownerId = currentUser.id,
+            members = (project.members + ownerMember).distinctBy { it.userId }
         )
 
         val entity = projectMapper.domainToEntity(projectToSave)
         projectDao.insertProject(entity)
+        projectMemberDao.upsertAll(
+            projectToSave.members.map { member ->
+                projectMemberMapper.domainToEntity(member.copy(projectId = projectToSave.id))
+            }
+        )
 
-        tryImmediateSync(projectToSave)
+        tryImmediateSync(projectToSave, isNewProject = true)
 
         Log.d("addProjectDebug", "createProject in repoIML: $projectToSave")
         return Result.success(projectToSave)
     }
 
-    private suspend fun tryImmediateSync(project: Project) {
+    private suspend fun tryImmediateSync(project: Project, isNewProject: Boolean) {
         try {
             val currentUser = userRepository.getCurrentUser().first()
             if (currentUser != null) {
-                val dto = projectMapper.domainToDto(project).copy(ownerId = currentUser.id)
-                firebaseProjectSource.updateProject(dto)
-                
-                // Add the project creator as a member
-                val memberDto = ProjectMemberDto(
-                    projectId = project.id,
-                    userId = currentUser.id,
-                    email = currentUser.email ?: "user@example.com",
-                    displayName = currentUser.displayName ?: "User",
-                    role = "OWNER"
-                )
-                firebaseProjectSource.addProjectMember(project.id, memberDto)
-                
-                // If successful, update the sync status in Room
+                val localMembers = projectMemberDao.getMembersForProjectsList(listOf(project.id))
+                    .map { projectMemberMapper.entityToDomain(it) }
+                val dto = projectMapper.domainToDto(
+                    project.copy(
+                        ownerId = currentUser.id,
+                        members = if (project.members.isNotEmpty()) project.members else localMembers
+                    )
+                ).copy(ownerId = currentUser.id)
+                val projectResult = if (isNewProject) {
+                    firebaseProjectSource.createProject(dto)
+                } else {
+                    firebaseProjectSource.updateProject(dto)
+                }
+
+                if (projectResult.isFailure) {
+                    throw projectResult.exceptionOrNull() ?: IllegalStateException("Project sync failed")
+                }
+
+                val membersToSync = (localMembers + project.members).ifEmpty {
+                    listOf(
+                        ProjectMember(
+                            projectId = project.id,
+                            userId = currentUser.id,
+                            email = currentUser.email,
+                            displayName = currentUser.displayName ?: currentUser.email,
+                            role = ProjectRole.OWNER
+                        )
+                    )
+                }.distinctBy { it.userId }
+
+                membersToSync.forEach { member ->
+                    firebaseProjectSource.addProjectMember(
+                        project.id,
+                        projectMemberMapper.domainToDto(member.copy(projectId = project.id))
+                    ).getOrThrow()
+                }
+
                 projectDao.updateSyncStatus(project.id, SyncStatus.SYNCED)
             }
         } catch (e: Exception) {
-            // Log the error but don't fail - the background sync will handle it later
             Log.e("ProjectRepository", "Failed immediate sync: ${e.message}")
         }
     }
@@ -106,6 +142,7 @@ class ProjectRepositoryImpl @Inject constructor(
 
         val entity = projectMapper.domainToEntity(updatedProject)
         projectDao.updateProject(entity)
+        tryImmediateSync(updatedProject, isNewProject = false)
 
         return Result.success(updatedProject)
     }
@@ -222,8 +259,18 @@ class ProjectRepositoryImpl @Inject constructor(
                 currentUser?.id ?: return Result.failure(Exception("User not authenticated"))
 
             pendingProjects.forEach { entity ->
-                val dto = projectMapper.entityToDto(entity).copy(id = userId)
-                val result = firebaseProjectSource.updateProject(dto)
+                val members = projectMemberDao.getMembersForProjectsList(listOf(entity.id))
+                    .map { projectMemberMapper.entityToDomain(it) }
+                val dto = projectMapper.entityToDto(entity).copy(
+                    ownerId = userId,
+                    members = (listOf(userId) + members.map { it.userId }).distinct(),
+                    memberIds = (listOf(userId) + members.map { it.userId }).distinct()
+                )
+                val result = if (entity.createdAt == entity.modifiedAt) {
+                    firebaseProjectSource.createProject(dto)
+                } else {
+                    firebaseProjectSource.updateProject(dto)
+                }
 
                 if (result.isSuccess) {
                     projectDao.updateSyncStatus(entity.id, SyncStatus.SYNCED)
@@ -331,7 +378,7 @@ class ProjectRepositoryImpl @Inject constructor(
                     role = ProjectRole.MEMBER
                 )
                 Log.d("Debug", "Created project member: $member")
-
+                projectMemberDao.insertMember(projectMemberMapper.domainToEntity(member))
                 Log.d("Debug", "Inserted new project member in local DB")
 
                 try {
@@ -436,8 +483,7 @@ class ProjectRepositoryImpl @Inject constructor(
 
             // Try to sync with Firebase
             try {
-                val projectDto = projectMapper.entityToDto(projectEntity)
-                firebaseProjectSource.updateProject(projectDto)
+                firebaseProjectSource.removeProjectMember(projectId, userId)
             } catch (e: Exception) {
                 Log.e("ProjectRepository", "Failed to sync member removal: ${e.message}")
                 // We'll retry during background sync

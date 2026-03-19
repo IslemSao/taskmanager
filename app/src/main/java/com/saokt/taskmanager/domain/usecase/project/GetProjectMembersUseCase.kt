@@ -12,4 +12,8 @@ class GetProjectMembersUseCase @Inject constructor(
     suspend operator fun invoke(projectId: String): Flow<List<ProjectMember>> {
         return projectRepository.getProjectMembers(projectId)
     }
+
+    suspend operator fun invoke(): Flow<List<ProjectMember>> {
+        return projectRepository.getProjectMembers()
+    }
 }

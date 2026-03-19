@@ -107,18 +107,27 @@ class TaskRepositoryImpl @Inject constructor(
         Log.d("TaskCreationDebug", "Repository: createTask called with $task")
         Log.d("TaskCreationDebug", "Repository: calling remoteDataSource.createTask")
         try {
+            val currentUser = userRepository.getCurrentUser().first()
+                ?: return Result.failure(IllegalStateException("User not authenticated"))
+
             // First save to local database
             val taskToSave = task.copy(
                 createdAt = Date(),
                 modifiedAt = Date(),
-                syncStatus = SyncStatus.PENDING
+                syncStatus = SyncStatus.PENDING,
+                userId = currentUser.id,
+                createdBy = task.createdBy.ifBlank { currentUser.id },
+                visibleToUserIds = listOfNotNull(
+                    currentUser.id,
+                    task.assignedTo
+                ).distinct()
             )
 
             val entity = taskMapper.domainToEntity(taskToSave)
             taskDao.insertTask(entity)
 
             // Then try to immediately sync with Firestore
-            tryImmediateSync(taskToSave)
+            tryImmediateSync(taskToSave, isNewTask = true)
 
             // Refresh widget
             widgetRefresher.refreshTopTasksWidget()
@@ -134,16 +143,25 @@ class TaskRepositoryImpl @Inject constructor(
         Log.d("TaskCreationDebug", "Repository: updateTask called with $task")
         Log.d("TaskCreationDebug", "Repository: calling remoteDataSource.updateTask")
         try {
+            val currentUser = userRepository.getCurrentUser().first()
+                ?: return Result.failure(IllegalStateException("User not authenticated"))
+
             val updatedTask = task.copy(
                 modifiedAt = Date(),
-                syncStatus = SyncStatus.PENDING
+                syncStatus = SyncStatus.PENDING,
+                userId = task.userId.ifBlank { currentUser.id },
+                createdBy = task.createdBy.ifBlank { currentUser.id },
+                visibleToUserIds = listOfNotNull(
+                    task.createdBy.ifBlank { currentUser.id },
+                    task.assignedTo
+                ).distinct()
             )
 
             val entity = taskMapper.domainToEntity(updatedTask)
             taskDao.updateTask(entity)
 
             // Try to immediately sync with Firestore
-            tryImmediateSync(updatedTask)
+            tryImmediateSync(updatedTask, isNewTask = false)
 
             // Refresh widget
             widgetRefresher.refreshTopTasksWidget()
@@ -211,7 +229,7 @@ class TaskRepositoryImpl @Inject constructor(
             )
 
             // Try to immediately sync with Firestore
-            tryImmediateSync(updatedTask)
+            tryImmediateSync(updatedTask, isNewTask = false)
 
             // Refresh widget
             widgetRefresher.refreshTopTasksWidget()
@@ -242,7 +260,7 @@ class TaskRepositoryImpl @Inject constructor(
             taskDao.updateTask(entity)
 
             // Try to immediately sync with Firestore
-            tryImmediateSync(completedTask)
+            tryImmediateSync(completedTask, isNewTask = false)
 
             // Refresh widget
             widgetRefresher.refreshTopTasksWidget()
@@ -260,7 +278,7 @@ class TaskRepositoryImpl @Inject constructor(
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    private suspend fun tryImmediateSync(task: Task) {
+    private suspend fun tryImmediateSync(task: Task, isNewTask: Boolean) {
         // Skip sync if no network connection
         if (!isNetworkAvailable()) {
             Log.i("TaskSync", "No network connection - task will sync when connection is restored")
@@ -270,20 +288,19 @@ class TaskRepositoryImpl @Inject constructor(
         try {
             val currentUser = userRepository.getCurrentUser().first()
             if (currentUser != null) {
-                // Set userId to the assigned user's ID, or current user if not assigned
-                val userId = task.assignedTo ?: currentUser.id
                 val dto = taskMapper.domainToDto(task).copy(
-                    userId = userId,
-                    createdBy = if (task.createdBy.isBlank()) currentUser.id else task.createdBy
+                    userId = task.userId.ifBlank { currentUser.id },
+                    createdBy = if (task.createdBy.isBlank()) currentUser.id else task.createdBy,
+                    visibleToUserIds = task.visibleToUserIds.ifEmpty {
+                        listOfNotNull(
+                            if (task.createdBy.isBlank()) currentUser.id else task.createdBy,
+                            task.assignedTo
+                        ).distinct()
+                    }
                 )
                 Log.d("TaskCreationDebug", "tryImmediateSync: currentUser.id: ${currentUser.id}")
                 Log.d("TaskCreationDebug", "tryImmediateSync: assignedTo: ${task.assignedTo}")
-                Log.d("TaskCreationDebug", "tryImmediateSync: userId: $userId")
                 Log.d("TaskCreationDebug", "tryImmediateSync: dto: $dto")
-                // Check if this is a new task (no sync status or PENDING) or existing task
-                val existingTask = taskDao.getTaskById(task.id).firstOrNull()
-                val isNewTask = existingTask == null || existingTask.syncStatus == SyncStatus.PENDING
-                Log.d("TaskCreationDebug", "tryImmediateSync: isNewTask: $isNewTask")
                 val result = if (isNewTask) {
                     Log.d("TaskCreationDebug", "tryImmediateSync: Calling createTask")
                     firebaseTaskSource.createTask(dto)
@@ -330,7 +347,16 @@ class TaskRepositoryImpl @Inject constructor(
 
             pendingTasks.forEach { entity ->
                 val task = taskMapper.entityToDomain(entity)
-                val dto = taskMapper.domainToDto(task).copy(userId = currentUser.id)
+                val dto = taskMapper.domainToDto(task).copy(
+                    userId = task.userId.ifBlank { currentUser.id },
+                    createdBy = task.createdBy.ifBlank { currentUser.id },
+                    visibleToUserIds = task.visibleToUserIds.ifEmpty {
+                        listOfNotNull(
+                            task.createdBy.ifBlank { currentUser.id },
+                            task.assignedTo
+                        ).distinct()
+                    }
+                )
 
                 val result = firebaseTaskSource.updateTask(dto)
 

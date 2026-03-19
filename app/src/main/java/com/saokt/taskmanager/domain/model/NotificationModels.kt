@@ -51,6 +51,31 @@ data class NotificationHistory(
     val actionTaken: NotificationAction? = null
 )
 
+enum class NotificationDestination {
+    TASK_DETAIL,
+    TASK_LIST,
+    PROJECT_DETAIL,
+    PROJECT_LIST,
+    CHAT,
+    NOTIFICATIONS
+}
+
+data class NotificationTarget(
+    val destination: NotificationDestination = NotificationDestination.NOTIFICATIONS,
+    val primaryId: String? = null,
+    val secondaryId: String? = null
+)
+
+data class NotificationRecord(
+    val id: String = UUID.randomUUID().toString(),
+    val type: NotificationType,
+    val title: String,
+    val message: String,
+    val createdAt: Date = Date(),
+    val isRead: Boolean = false,
+    val target: NotificationTarget = NotificationTarget()
+)
+
 enum class NotificationAction {
     MARK_COMPLETE,
     SNOOZE,

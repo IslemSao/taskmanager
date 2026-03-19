@@ -10,13 +10,18 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.saokt.taskmanager.MainActivity
 import com.saokt.taskmanager.R
-import com.saokt.taskmanager.domain.model.Task
-import com.saokt.taskmanager.domain.model.Project
 import com.saokt.taskmanager.domain.model.NotificationPreference
 import com.saokt.taskmanager.domain.model.NotificationPriority
+import com.saokt.taskmanager.domain.model.NotificationRecord
+import com.saokt.taskmanager.domain.model.NotificationTarget
+import com.saokt.taskmanager.domain.model.NotificationDestination
+import com.saokt.taskmanager.domain.model.NotificationType
+import com.saokt.taskmanager.domain.model.Project
 import com.saokt.taskmanager.domain.model.StreakData
+import com.saokt.taskmanager.domain.model.Task
 import com.saokt.taskmanager.domain.model.WeeklyStats
 import com.saokt.taskmanager.domain.model.DayStats
+import com.saokt.taskmanager.domain.repository.NotificationRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -29,7 +34,8 @@ import javax.inject.Singleton
 @Singleton
 class TaskNotificationManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val settingsManager: NotificationSettingsManager
+    private val settingsManager: NotificationSettingsManager,
+    private val notificationRepository: NotificationRepository
 ) {
     companion object {
         const val TASK_REMINDER_CHANNEL_ID = "task_reminder_channel"
@@ -99,9 +105,21 @@ class TaskNotificationManager @Inject constructor(
         }
 
         try {
-            notificationManager.notify(generateNotificationId(), notification)
+            deliverNotification(
+                notificationId = generateNotificationId(),
+                notification = notification,
+                record = NotificationRecord(
+                    type = NotificationType.TASK_REMINDER,
+                    title = if (tasks.size == 1) "Don't forget your task!" else "Task Reminder",
+                    message = if (tasks.size == 1) tasks.first().title else "You have ${tasks.size} pending tasks",
+                    target = if (tasks.size == 1) {
+                        NotificationTarget(NotificationDestination.TASK_DETAIL, tasks.first().id)
+                    } else {
+                        NotificationTarget(NotificationDestination.TASK_LIST)
+                    }
+                )
+            )
         } catch (e: SecurityException) {
-            // Handle case where notification permission is not granted
             e.printStackTrace()
         }
     }
@@ -136,11 +154,16 @@ class TaskNotificationManager @Inject constructor(
             )
             .build()
 
-        try {
-            notificationManager.notify(task.id.hashCode(), notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = task.id.hashCode(),
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.DUE_SOON_ALERT,
+                title = "Task Due Soon",
+                message = "${task.title} - $dueText",
+                target = NotificationTarget(NotificationDestination.TASK_DETAIL, task.id)
+            )
+        )
     }
 
     private fun createSingleTaskReminderNotification(
@@ -275,11 +298,20 @@ class TaskNotificationManager @Inject constructor(
             }
         }
 
-        try {
-            notificationManager.notify(generateNotificationId(), notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = generateNotificationId(),
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.TASK_REMINDER,
+                title = if (tasks.size == 1) "Task Reminder" else "Task Reminder",
+                message = if (tasks.size == 1) tasks.first().title else "You have ${tasks.size} pending tasks",
+                target = if (tasks.size == 1) {
+                    NotificationTarget(NotificationDestination.TASK_DETAIL, tasks.first().id)
+                } else {
+                    NotificationTarget(NotificationDestination.TASK_LIST)
+                }
+            )
+        )
     }
 
     fun showEnhancedDueSoonNotification(task: Task, preference: NotificationPreference) {
@@ -315,11 +347,16 @@ class TaskNotificationManager @Inject constructor(
             )
             .build()
 
-        try {
-            notificationManager.notify(task.id.hashCode(), notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = task.id.hashCode(),
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.DUE_SOON_ALERT,
+                title = "Task Due Soon",
+                message = "${task.title} - $dueText",
+                target = NotificationTarget(NotificationDestination.TASK_DETAIL, task.id)
+            )
+        )
     }
 
     fun showEnhancedOverdueNotification(task: Task, preference: NotificationPreference) {
@@ -354,11 +391,16 @@ class TaskNotificationManager @Inject constructor(
             )
             .build()
 
-        try {
-            notificationManager.notify(task.id.hashCode() + 1000, notification) // Different ID for overdue
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = task.id.hashCode() + 1000,
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.OVERDUE_ALERT,
+                title = "Task Overdue",
+                message = "${task.title} - $overdueText",
+                target = NotificationTarget(NotificationDestination.TASK_DETAIL, task.id)
+            )
+        )
     }
 
     fun showEnhancedHighPriorityNotification(tasks: List<Task>, preference: NotificationPreference) {
@@ -396,11 +438,16 @@ class TaskNotificationManager @Inject constructor(
             }
             .build()
 
-        try {
-            notificationManager.notify(generateNotificationId() + 2000, notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = generateNotificationId() + 2000,
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.HIGH_PRIORITY_REMINDER,
+                title = "High Priority Tasks",
+                message = "You have ${tasks.size} high priority task(s) to complete",
+                target = NotificationTarget(NotificationDestination.TASK_LIST)
+            )
+        )
     }
 
     fun showEnhancedProjectUpdateNotification(project: Project, preference: NotificationPreference) {
@@ -421,11 +468,16 @@ class TaskNotificationManager @Inject constructor(
             .setVibrate(longArrayOf(0, 250, 250, 250))
             .build()
 
-        try {
-            notificationManager.notify(project.id.hashCode() + 3000, notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = project.id.hashCode() + 3000,
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.PROJECT_UPDATE,
+                title = "Project Update",
+                message = "${project.title} has been updated",
+                target = NotificationTarget(NotificationDestination.PROJECT_DETAIL, project.id)
+            )
+        )
     }
 
     fun showEnhancedAssignmentNotification(task: Task, preference: NotificationPreference) {
@@ -446,11 +498,16 @@ class TaskNotificationManager @Inject constructor(
             .setVibrate(longArrayOf(0, 250, 250, 250))
             .build()
 
-        try {
-            notificationManager.notify(task.id.hashCode() + 4000, notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = task.id.hashCode() + 4000,
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.ASSIGNMENT_UPDATE,
+                title = "New Task Assignment",
+                message = "You've been assigned: ${task.title}",
+                target = NotificationTarget(NotificationDestination.TASK_DETAIL, task.id)
+            )
+        )
     }
 
     fun showEnhancedCelebrationNotification(task: Task, preference: NotificationPreference) {
@@ -473,11 +530,16 @@ class TaskNotificationManager @Inject constructor(
             .setVibrate(longArrayOf(0, 250, 250, 250))
             .build()
 
-        try {
-            notificationManager.notify(task.id.hashCode() + 5000, notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = task.id.hashCode() + 5000,
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.COMPLETION_CELEBRATION,
+                title = "Task Completed",
+                message = "${task.title} completed",
+                target = NotificationTarget(NotificationDestination.TASK_DETAIL, task.id)
+            )
+        )
     }
 
     fun showEnhancedStreakNotification(streakData: StreakData, preference: NotificationPreference) {
@@ -501,11 +563,16 @@ class TaskNotificationManager @Inject constructor(
             .setVibrate(longArrayOf(0, 250, 250, 250))
             .build()
 
-        try {
-            notificationManager.notify(6000, notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = 6000,
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.STREAK_REMINDER,
+                title = "Keep Your Streak Going",
+                message = "Current streak: ${streakData.currentStreak} days",
+                target = NotificationTarget(NotificationDestination.TASK_LIST)
+            )
+        )
     }
 
     fun showEnhancedDeadlineWarningNotification(task: Task, preference: NotificationPreference) {
@@ -538,11 +605,16 @@ class TaskNotificationManager @Inject constructor(
             )
             .build()
 
-        try {
-            notificationManager.notify(task.id.hashCode() + 7000, notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = task.id.hashCode() + 7000,
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.DEADLINE_WARNING,
+                title = "Deadline Approaching",
+                message = "${task.title} - Due $timeLeft",
+                target = NotificationTarget(NotificationDestination.TASK_DETAIL, task.id)
+            )
+        )
     }
 
     fun showEnhancedWeeklySummaryNotification(stats: WeeklyStats, preference: NotificationPreference) {
@@ -569,11 +641,16 @@ class TaskNotificationManager @Inject constructor(
             .setVibrate(longArrayOf(0, 250, 250, 250))
             .build()
 
-        try {
-            notificationManager.notify(8000, notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = 8000,
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.WEEKLY_SUMMARY,
+                title = "Your Weekly Summary",
+                message = "Tasks completed: ${stats.tasksCompleted}",
+                target = NotificationTarget(NotificationDestination.TASK_LIST)
+            )
+        )
     }
 
     fun showEnhancedMorningBriefingNotification(tasks: List<Task>, preference: NotificationPreference) {
@@ -606,11 +683,16 @@ class TaskNotificationManager @Inject constructor(
             .setVibrate(longArrayOf(0, 250, 250, 250))
             .build()
 
-        try {
-            notificationManager.notify(9000, notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = 9000,
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.MORNING_BRIEFING,
+                title = "Morning Briefing",
+                message = "You have $taskCount task(s) scheduled for today",
+                target = NotificationTarget(NotificationDestination.TASK_LIST)
+            )
+        )
     }
 
     fun showEnhancedEveningReviewNotification(stats: DayStats, preference: NotificationPreference) {
@@ -639,11 +721,16 @@ class TaskNotificationManager @Inject constructor(
             .setVibrate(longArrayOf(0, 250, 250, 250))
             .build()
 
-        try {
-            notificationManager.notify(10000, notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
-        }
+        deliverNotification(
+            notificationId = 10000,
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.EVENING_REVIEW,
+                title = "Evening Review",
+                message = reviewMessage,
+                target = NotificationTarget(NotificationDestination.NOTIFICATIONS)
+            )
+        )
     }
 
     // ========== HELPER METHODS ==========
@@ -835,10 +922,29 @@ class TaskNotificationManager @Inject constructor(
             .setVibrate(longArrayOf(0, 250, 250, 250))
             .build()
 
+        deliverNotification(
+            notificationId = generateNotificationId(),
+            notification = notification,
+            record = NotificationRecord(
+                type = NotificationType.CHAT_MESSAGE,
+                title = title,
+                message = body,
+                target = NotificationTarget(NotificationDestination.NOTIFICATIONS)
+            )
+        )
+    }
+
+    private fun deliverNotification(
+        notificationId: Int,
+        notification: android.app.Notification,
+        record: NotificationRecord
+    ) {
         try {
-            notificationManager.notify(generateNotificationId(), notification)
+            notificationManager.notify(notificationId, notification)
         } catch (e: SecurityException) {
             e.printStackTrace()
+        } finally {
+            notificationRepository.addNotification(record)
         }
     }
 }

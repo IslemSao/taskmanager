@@ -71,12 +71,18 @@ class ProfileViewModel @Inject constructor(
                     error = null
                 )
 
-                deleteAccountUseCase()
-
-                _uiState.value = _uiState.value.copy(
-                    isDeletingAccount = false,
-                    accountDeleted = true
-                )
+                val result = deleteAccountUseCase()
+                if (result.isSuccess) {
+                    _uiState.value = _uiState.value.copy(
+                        isDeletingAccount = false,
+                        accountDeleted = true
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isDeletingAccount = false,
+                        error = result.exceptionOrNull()?.message ?: "Failed to delete account"
+                    )
+                }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isDeletingAccount = false,

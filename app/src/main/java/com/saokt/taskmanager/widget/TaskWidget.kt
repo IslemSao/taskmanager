@@ -3,6 +3,7 @@ package com.saokt.taskmanager.widget
 import android.content.ComponentName
 import android.content.Context
 import android.util.Log
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -92,14 +93,14 @@ private fun TaskWidgetContent(tasks: List<TaskEntity>) {
                 text = "Top Tasks",
                 style = TextStyle(
                     fontWeight = FontWeight.Bold,
-                    color = ColorProvider(R.color.widget_text_white)
+                    color = widgetTextWhite
                 )
             )
             Spacer(modifier = GlanceModifier.size(R.dimen.widget_header_spacing))
             Text(
                 text = todayLabel(),
                 style = TextStyle(
-                    color = ColorProvider(R.color.widget_text_white)
+                    color = widgetTextWhite
                 )
             )
         }
@@ -110,7 +111,7 @@ private fun TaskWidgetContent(tasks: List<TaskEntity>) {
                 Text(
                     text = "No pending tasks",
                     style = TextStyle(
-                        color = ColorProvider(R.color.widget_text_secondary)
+                        color = widgetTextSecondary
                     )
                 )
             } else {
@@ -134,7 +135,7 @@ private fun TaskWidgetContent(tasks: List<TaskEntity>) {
                                 text = "${priorityEmoji(task)}  ${task.title}",
                                 style = TextStyle(
                                     fontWeight = FontWeight.Medium,
-                                    color = ColorProvider(R.color.widget_text_primary)
+                                    color = widgetTextPrimary
                                 )
                             )
                         }
@@ -145,7 +146,7 @@ private fun TaskWidgetContent(tasks: List<TaskEntity>) {
                             Text(
                                 text = truncate(desc, 80),
                                 style = TextStyle(
-                                    color = ColorProvider(R.color.widget_text_secondary)
+                                    color = widgetTextSecondary
                                 )
                             )
                         }
@@ -160,7 +161,7 @@ private fun TaskWidgetContent(tasks: List<TaskEntity>) {
                                 Text(
                                     text = parts.joinToString("  •  "),
                                     style = TextStyle(
-                                        color = ColorProvider(R.color.widget_text_secondary)
+                                        color = widgetTextSecondary
                                     )
                                 )
                             }
@@ -180,7 +181,7 @@ private fun TaskWidgetContent(tasks: List<TaskEntity>) {
                         text = "Open app →",
                         style = TextStyle(
                             fontWeight = FontWeight.Medium,
-                            color = ColorProvider(R.color.widget_header_bg)
+                            color = widgetHeaderAccent
                         )
                     )
                 }
@@ -236,6 +237,11 @@ private fun todayLabel(): String {
 private fun truncate(text: String, max: Int): String =
     if (text.length <= max) text else text.take(max - 1) + "…"
 
+private val widgetTextWhite = ColorProvider(Color(0xFFFFFFFF))
+private val widgetTextPrimary = ColorProvider(Color(0xFF1F2937))
+private val widgetTextSecondary = ColorProvider(Color(0xFF6B7280))
+private val widgetHeaderAccent = ColorProvider(Color(0xFF2563EB))
+
 @Composable
 private fun ErrorWidgetContent(message: String) {
     Column(
@@ -248,14 +254,14 @@ private fun ErrorWidgetContent(message: String) {
             text = "Task Manager",
             style = TextStyle(
                 fontWeight = FontWeight.Bold,
-                color = ColorProvider(R.color.widget_text_primary)
+                color = widgetTextPrimary
             )
         )
         Spacer(modifier = GlanceModifier.size(R.dimen.widget_spacing_small))
         Text(
             text = message,
             style = TextStyle(
-                color = ColorProvider(R.color.widget_text_secondary)
+                color = widgetTextSecondary
             )
         )
         Spacer(modifier = GlanceModifier.size(R.dimen.widget_spacing_small))
@@ -268,7 +274,7 @@ private fun ErrorWidgetContent(message: String) {
                 text = "Open app →",
                 style = TextStyle(
                     fontWeight = FontWeight.Medium,
-                    color = ColorProvider(R.color.widget_header_bg)
+                    color = widgetHeaderAccent
                 )
             )
         }

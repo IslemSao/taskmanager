@@ -12,7 +12,9 @@ import javax.inject.Singleton
 
 @Singleton
 class FCMTokenManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val firestore: FirebaseFirestore,
+    private val auth: FirebaseAuth
 ) {
 
     companion object {
@@ -22,8 +24,6 @@ class FCMTokenManager @Inject constructor(
         private const val KEY_LAST_UPDATE = "last_token_update"
     }
 
-    private val firestore = FirebaseFirestore.getInstance()
-    private val auth = FirebaseAuth.getInstance()
     private val sharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     /**

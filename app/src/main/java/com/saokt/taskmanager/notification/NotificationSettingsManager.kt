@@ -220,6 +220,28 @@ class NotificationSettingsManager @Inject constructor(
         sharedPreferences.edit().putString(KEY_SMART_RULES, json).apply()
     }
 
+    fun saveNotificationProfiles(profiles: List<NotificationProfile>) {
+        val json = gson.toJson(profiles)
+        sharedPreferences.edit().putString(KEY_NOTIFICATION_PROFILES, json).apply()
+    }
+
+    fun getNotificationRecords(): List<NotificationRecord> {
+        val json = sharedPreferences.getString(KEY_NOTIFICATION_HISTORY, null) ?: return emptyList()
+        return try {
+            val type = object : TypeToken<List<NotificationRecord>>() {}.type
+            gson.fromJson(json, type) ?: emptyList()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load notification records", e)
+            emptyList()
+        }
+    }
+
+    fun saveNotificationRecords(records: List<NotificationRecord>) {
+        sharedPreferences.edit()
+            .putString(KEY_NOTIFICATION_HISTORY, gson.toJson(records))
+            .apply()
+    }
+
     // ========== UTILITY METHODS ==========
 
     /**

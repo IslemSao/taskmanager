@@ -5,10 +5,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,7 +42,7 @@ fun ProjectTasksScreen(
                 title = { Text(state.project?.title ?: "Project Tasks") },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -76,7 +76,7 @@ fun ProjectTasksScreen(
                             }
                         }
                     ) {
-                        Icon(Icons.Default.Chat, contentDescription = "Open Chat")
+                        Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Open Chat")
                     }
                 }
             )
@@ -84,7 +84,12 @@ fun ProjectTasksScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    navController.navigate(Screen.TaskDetail.createRoute("new"))
+                    navController.navigate(
+                        Screen.TaskDetail.createRoute(
+                            taskId = "new",
+                            projectId = projectId
+                        )
+                    )
                 }
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add Task")

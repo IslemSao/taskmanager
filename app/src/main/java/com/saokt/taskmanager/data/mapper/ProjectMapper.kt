@@ -40,6 +40,13 @@ class ProjectMapper @Inject constructor() {
     }
 
     fun domainToDto(project: Project): ProjectDto {
+        val memberIds = buildList {
+            if (project.ownerId.isNotBlank()) {
+                add(project.ownerId)
+            }
+            addAll(project.members.map { it.userId })
+        }.distinct()
+
         return ProjectDto(
             id = project.id,
             title = project.title,
@@ -50,7 +57,9 @@ class ProjectMapper @Inject constructor() {
             completed = project.isCompleted,
             createdAt = project.createdAt,
             modifiedAt = project.modifiedAt,
-            ownerId = project.ownerId
+            ownerId = project.ownerId,
+            members = memberIds,
+            memberIds = memberIds
         )
     }
 
@@ -65,7 +74,9 @@ class ProjectMapper @Inject constructor() {
             completed = entity.isCompleted,
             createdAt = entity.createdAt,
             modifiedAt = entity.modifiedAt,
-            ownerId = entity.ownerId
+            ownerId = entity.ownerId,
+            members = listOf(entity.ownerId).filter { it.isNotBlank() },
+            memberIds = listOf(entity.ownerId).filter { it.isNotBlank() }
         )
     }
 }

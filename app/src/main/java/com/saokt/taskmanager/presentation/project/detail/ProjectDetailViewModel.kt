@@ -14,6 +14,7 @@ import com.saokt.taskmanager.domain.usecase.project.RemoveProjectMemberUseCase
 import com.saokt.taskmanager.domain.usecase.project.UpdateProjectUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.*
@@ -46,6 +47,7 @@ class ProjectDetailViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(ProjectDetailState())
     val state: StateFlow<ProjectDetailState> = _state.asStateFlow()
+    private var projectLoadJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -81,36 +83,26 @@ class ProjectDetailViewModel @Inject constructor(
     }
 
     fun loadProject(projectId: String) {
+        projectLoadJob?.cancel()
         Log.d("ProjectMembersDebug", "ProjectDetailViewModel: loadProject called with projectId: $projectId")
-        viewModelScope.launch {
+        projectLoadJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true) }
 
             try {
-                // Load project
-                val projectFlow = getProjectUseCase(projectId)
-                projectFlow.collect { project ->
+                getProjectUseCase(projectId).collectLatest { project ->
                     Log.d("ProjectMembersDebug", "ProjectDetailViewModel: Project loaded: ${project?.title}")
-                    
+
                     if (project != null) {
-                        // Load members separately
-                        Log.d("ProjectMembersDebug", "ProjectDetailViewModel: Loading members for project")
-                        getProjectMembersUseCase(projectId).collect { members ->
-                            Log.d("ProjectMembersDebug", "ProjectDetailViewModel: Members loaded: ${members.size} members")
-                            members.forEach { member ->
-                                Log.d("ProjectMembersDebug", "ProjectDetailViewModel: Member: ${member.displayName} (${member.userId}) - ${member.email}")
-                            }
-                            
-                            // Update project with loaded members
-                            val projectWithMembers = project.copy(members = members)
-                            _state.update {
-                                it.copy(
-                                    project = projectWithMembers,
-                                    isLoading = false,
-                                    isNewProject = false
-                                )
-                            }
-                            Log.d("ProjectMembersDebug", "ProjectDetailViewModel: Project state updated with ${members.size} members")
+                        val members = getProjectMembersUseCase(projectId).first()
+                        val projectWithMembers = project.copy(members = members)
+                        _state.update {
+                            it.copy(
+                                project = projectWithMembers,
+                                isLoading = false,
+                                isNewProject = false
+                            )
                         }
+                        Log.d("ProjectMembersDebug", "ProjectDetailViewModel: Project state updated with ${members.size} members")
                     } else {
                         _state.update {
                             it.copy(
@@ -206,13 +198,23 @@ class ProjectDetailViewModel @Inject constructor(
 
     fun inviteMember() {
         viewModelScope.launch {
-            Log.d("invitation", "inviteMember vm fun")
             _state.update { it.copy(isInviting = true, inviteError = null) }
+            val inviteEmail = state.value.inviteEmail.trim()
+
+            if (inviteEmail.isBlank()) {
+                _state.update {
+                    it.copy(
+                        isInviting = false,
+                        inviteError = "Email is required"
+                    )
+                }
+                return@launch
+            }
 
             val result = inviteMemberUseCase(
                 projectId = state.value.project.id,
                 projectTitle = state.value.project.title,
-                userEmail = state.value.inviteEmail
+                userEmail = inviteEmail
             )
 
             if (result.isSuccess) {
