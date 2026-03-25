@@ -1,5 +1,6 @@
 package com.saokt.taskmanager.data.repository
 
+import android.util.Patterns
 import android.util.Log
 import com.saokt.taskmanager.data.local.dao.ProjectDao
 import com.saokt.taskmanager.data.local.dao.ProjectInvitationDao
@@ -37,6 +38,9 @@ class ProjectRepositoryImpl @Inject constructor(
     private val projectInvitationMapper: ProjectInvitationMapper,
     private val userRepository: UserRepository
 ) : ProjectRepository {
+    companion object {
+        private const val TAG = "ProjectRepository"
+    }
 
     override fun getAllProjects(): Flow<List<Project>> {
         return projectDao.getAllProjects().map { entities ->
@@ -45,12 +49,7 @@ class ProjectRepositoryImpl @Inject constructor(
     }
 
     override fun getProjectById(projectId: String): Flow<Project?> {
-        Log.d("ProjectMembersDebug", "ProjectRepositoryImpl: getProjectById called for projectId: $projectId")
-        return projectDao.getProjectById(projectId).map { entity ->
-            Log.d("ProjectMembersDebug", "ProjectRepositoryImpl: Project entity loaded: ${entity?.title}")
-            Log.d("ProjectMembersDebug", "ProjectRepositoryImpl: Project ownerId: ${entity?.ownerId}")
-            entity?.let { projectMapper.entityToDomain(it) }
-        }
+        return projectDao.getProjectById(projectId).map { entity -> entity?.let(projectMapper::entityToDomain) }
     }
 
     override suspend fun createProject(project: Project): Result<Project> {
@@ -80,8 +79,6 @@ class ProjectRepositoryImpl @Inject constructor(
         )
 
         tryImmediateSync(projectToSave, isNewProject = true)
-
-        Log.d("addProjectDebug", "createProject in repoIML: $projectToSave")
         return Result.success(projectToSave)
     }
 
@@ -129,7 +126,7 @@ class ProjectRepositoryImpl @Inject constructor(
                 projectDao.updateSyncStatus(project.id, SyncStatus.SYNCED)
             }
         } catch (e: Exception) {
-            Log.e("ProjectRepository", "Failed immediate sync: ${e.message}")
+            Log.e(TAG, "Failed immediate sync", e)
         }
     }
 
@@ -149,78 +146,51 @@ class ProjectRepositoryImpl @Inject constructor(
 
 
     override suspend fun deleteProject(projectId: String): Result<Unit> {
-        val TAG = "DeleteProject"
-
         return try {
-            Log.d(TAG, "Attempting to delete project with ID: $projectId")
-
             val userId = firebaseAuthSource.getCurrentUserId()
-            Log.d(TAG, "Current user ID: $userId")
 
             val project = projectDao.getProjectById(projectId).firstOrNull()
             if (project == null) {
-                Log.e(TAG, "Project not found for ID: $projectId")
                 return Result.failure(IllegalStateException("Project not found"))
             }
 
-            Log.d(TAG, "Project retrieved: $project")
-
             if (userId != project.ownerId) {
-                Log.e(TAG, "User does not own the project. userId=$userId, ownerId=${project.ownerId}")
-                return Result.failure(IllegalStateException("User doesn't own the project"))
+                return Result.failure(IllegalStateException("Only the project owner can delete this project"))
             }
-
-            Log.d(TAG, "User owns the project. Proceeding with deletion.")
 
 
             // Then delete from Firebase
             val currentUser = userRepository.getCurrentUser().first()
             if (currentUser != null) {
-                Log.d(TAG, "Deleting project and related data from Firebase for user: ${currentUser.id}")
                 deleteProjectAndRelatedDataFromFirebase(projectId)
-                Log.d(TAG, "Firebase deletion complete.")
             } else {
-                Log.e(TAG, "Current user is null while trying to delete project from Firebase.")
+                Log.w(TAG, "Current user missing while deleting project remotely; continuing with local delete.")
             }
 
-            Log.d(TAG, "Project deletion completed successfully.")
             // First delete from Room
             projectDao.deleteProject(projectId)
-            Log.d(TAG, "Project deleted from local Room database.")
 
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Exception while deleting project: ${e.localizedMessage}", e)
+            Log.e(TAG, "Exception while deleting project", e)
             Result.failure(e)
         }
     }
 
     private suspend fun deleteProjectAndRelatedDataFromFirebase(projectId: String) {
         try {
-            Log.d(
-                "deleteProjectDebug",
-                "deleteProjectAndRelatedDataFromFirebase in repoIML: $projectId"
-            )
-
             // 1. First delete all tasks in the project
             firebaseProjectSource.deleteAllTasksForProject(projectId)
-            Log.d("deleteProjectDebug", "after deleteAllTasksForProject")
             // 2. Then delete all invitations for the project
             firebaseProjectSource.deleteAllInvitationsForProject(projectId)
-            Log.d("deleteProjectDebug", "after deleteAllInvitationsForProject")
 
             // 3. Then delete all members of the project
             firebaseProjectSource.deleteAllMembersForProject(projectId)
-            Log.d("deleteProjectDebug", "after deleteAllMembersForProject")
 
             // 4. Finally delete the project itself
             firebaseProjectSource.deleteProject(projectId)
-            Log.d("deleteProjectDebug", "after deleteProject")
         } catch (e: Exception) {
-            Log.e(
-                "ProjectRepository",
-                "Failed to delete project and related data from Firebase: ${e.message}"
-            )
+            Log.e(TAG, "Failed to delete project and related data from Firebase", e)
             throw e
         }
     }
@@ -292,36 +262,57 @@ class ProjectRepositoryImpl @Inject constructor(
         userEmail: String
     ): Result<ProjectInvitation> {
         try {
-            Log.d("invitation", "repo fun")
-            // Get current user
             val currentUser = userRepository.getCurrentUser().first()
-                ?: return Result.failure(Exception("User not authenticated"))
+                ?: return Result.failure(IllegalStateException("User not authenticated"))
+            val normalizedEmail = userEmail.trim().lowercase()
+            val project = projectDao.getProjectById(projectId).firstOrNull()
+                ?: return Result.failure(IllegalStateException("Project not found"))
 
-            // Create invitation
+            if (project.ownerId != currentUser.id) {
+                return Result.failure(IllegalStateException("Only the project owner can invite members"))
+            }
+            if (normalizedEmail.isBlank() || !Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches()) {
+                return Result.failure(IllegalArgumentException("Enter a valid email address"))
+            }
+            if (normalizedEmail == currentUser.email.trim().lowercase()) {
+                return Result.failure(IllegalArgumentException("You cannot invite yourself to your own project"))
+            }
+
+            val currentMembers = projectMemberDao.getMembersByProject(projectId).first()
+            if (currentMembers.any { it.email.equals(normalizedEmail, ignoreCase = true) }) {
+                return Result.failure(IllegalStateException("This user is already a project member"))
+            }
+
+            val existingPendingInvite = projectInvitationDao.getAllInvitations()
+                .first()
+                .map(projectInvitationMapper::entityToDomain)
+                .any {
+                    it.projectId == projectId &&
+                        it.inviteeEmail.equals(normalizedEmail, ignoreCase = true) &&
+                        it.status == InvitationStatus.PENDING
+                }
+            if (existingPendingInvite) {
+                return Result.failure(IllegalStateException("A pending invitation already exists for this email"))
+            }
+
             val invitation = ProjectInvitation(
                 projectId = projectId,
-                projectTitle = projectTitle,
+                projectTitle = projectTitle.ifBlank { project.title },
                 inviterId = currentUser.id,
                 inviterName = currentUser.displayName ?: currentUser.email,
                 inviteeId = "",
-                inviteeEmail = userEmail,
+                inviteeEmail = normalizedEmail,
                 createdAt = Date()
             )
 
-            // Save to local database
             val invitationEntity = projectInvitationMapper.domainToEntity(invitation)
             projectInvitationDao.insertInvitation(invitationEntity)
 
-            // Try to sync with Firebase
             try {
-                Log.d("invitation", "repo fun try synch")
-
                 val invitationDto = projectInvitationMapper.domainToDto(invitation)
                 firebaseProjectSource.createInvitation(invitationDto)
             } catch (e: Exception) {
-                Log.d("invitation", "repo fun try synch failed : ${e.message}")
-                Log.e("ProjectRepository", "Failed to sync invitation: ${e.message}")
-                // We'll retry during background sync
+                Log.e(TAG, "Failed to sync invitation", e)
             }
 
             return Result.success(invitation)
@@ -331,7 +322,6 @@ class ProjectRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getProjectInvitations(): Flow<List<ProjectInvitation>> {
-        Log.d("bombardiro", "from getProjectInvitations")
         return projectInvitationDao.getAllInvitations().map { entities ->
             entities.map { projectInvitationMapper.entityToDomain(it) }
         }
@@ -339,112 +329,76 @@ class ProjectRepositoryImpl @Inject constructor(
 
     override suspend fun respondToInvitation(invitationId: String, accept: Boolean): Result<Unit> {
         try {
-            Log.d(
-                "Debug",
-                "Starting respondToInvitation with id: $invitationId and accept: $accept"
-            )
-
-            // Get the invitation
             val invitation = projectInvitationDao.getInvitationById(invitationId).first()
-                ?: return Result.failure(Exception("Invitation not found"))
-            Log.d("Debug", "Fetched invitation: $invitation")
-
+                ?: return Result.failure(IllegalStateException("Invitation not found"))
             val invitationDomain = projectInvitationMapper.entityToDomain(invitation)
-            Log.d("Debug", "Mapped invitation to domain: $invitationDomain")
+            val currentUser = userRepository.getCurrentUser().first()
+                ?: return Result.failure(IllegalStateException("User not authenticated"))
 
-            // Update invitation status
             val updatedInvitation = invitationDomain.copy(
+                inviteeId = currentUser.id,
                 status = if (accept) InvitationStatus.ACCEPTED else InvitationStatus.REJECTED
             )
-            Log.d("Debug", "Updated invitation status: $updatedInvitation")
 
-            // Save to local database
             val invitationEntity = projectInvitationMapper.domainToEntity(updatedInvitation)
             projectInvitationDao.updateInvitation(invitationEntity)
-            Log.d("Debug", "Updated invitation in local DB")
 
-            // If accepted, add user as project member
             if (accept) {
-                Log.d("Debug", "Invitation accepted, proceeding to add user as project member")
-                val currentUser = userRepository.getCurrentUser().first()
-                    ?: return Result.failure(Exception("User not authenticated"))
-                Log.d("Debug", "Fetched current user: $currentUser")
+                val existingMembers = projectMemberDao.getMembersByProject(invitationDomain.projectId).first()
+                val alreadyMember = existingMembers.any { it.userId == currentUser.id }
 
-                val member = ProjectMember(
-                    projectId = invitationDomain.projectId,
-                    userId = currentUser.id,
-                    email = currentUser.email,
-                    displayName = currentUser.displayName ?: currentUser.email,
-                    role = ProjectRole.MEMBER
-                )
-                Log.d("Debug", "Created project member: $member")
-                projectMemberDao.insertMember(projectMemberMapper.domainToEntity(member))
-                Log.d("Debug", "Inserted new project member in local DB")
+                if (!alreadyMember) {
+                    val member = ProjectMember(
+                        projectId = invitationDomain.projectId,
+                        userId = currentUser.id,
+                        email = currentUser.email,
+                        displayName = currentUser.displayName ?: currentUser.email,
+                        role = ProjectRole.MEMBER
+                    )
+                    projectMemberDao.insertMember(projectMemberMapper.domainToEntity(member))
 
-                try {
-                    val memberDto = projectMemberMapper.domainToDto(member)
-                    firebaseProjectSource.addProjectMember(invitationDomain.projectId, memberDto)
-                    Log.d("Debug", "Synced project member addition to Firebase")
-                } catch (e: Exception) {
-                    Log.e("ProjectRepository", "Failed to sync member addition: ${e.message}")
+                    try {
+                        val memberDto = projectMemberMapper.domainToDto(member)
+                        firebaseProjectSource.addProjectMember(invitationDomain.projectId, memberDto)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to sync member addition", e)
+                    }
                 }
             }
 
-            // Try to sync with Firebase
             try {
-
-                Log.d("Debug", "Invitation response: $updatedInvitation")
                 val invitationDto = projectInvitationMapper.domainToDto(updatedInvitation)
-                Log.d("Debug", "Invitation dto: $invitationDto")
                 firebaseProjectSource.updateInvitation(invitationDto)
-                Log.d("Debug", "Synced invitation response to Firebase")
             } catch (e: Exception) {
-                Log.e("ProjectRepository", "Failed to sync invitation response: ${e.message}")
+                Log.e(TAG, "Failed to sync invitation response", e)
             }
 
-            Log.d("Debug", "respondToInvitation completed successfully")
             return Result.success(Unit)
         } catch (e: Exception) {
-            Log.e("ProjectRepository", "Error in respondToInvitation: ${e.message}")
+            Log.e(TAG, "Error in respondToInvitation", e)
             return Result.failure(e)
         }
     }
 
     override suspend fun getProjectMembers(projectId: String): Flow<List<ProjectMember>> {
-        Log.d("TaskCreationDebug", "Repository: getProjectMembers called for $projectId")
-        Log.d("ProjectMembersDebug", "ProjectRepositoryImpl: getProjectMembers called for projectId: $projectId")
-        
-        // Always try to get fresh data from Firebase first
         try {
-            Log.d("ProjectMembersDebug", "ProjectRepositoryImpl: Fetching fresh data from Firebase")
-            val firebaseMembers = firebaseProjectSource.getProjectMembers(projectId).getOrNull()
-            if (firebaseMembers != null && firebaseMembers.isNotEmpty()) {
-                Log.d("ProjectMembersDebug", "ProjectRepositoryImpl: Found ${firebaseMembers.size} members in Firebase")
-                
-                // Clear old members from local database for this project
+            val firebaseResult = firebaseProjectSource.getProjectMembers(projectId)
+            if (firebaseResult.isSuccess) {
+                val firebaseMembers = firebaseResult.getOrNull().orEmpty()
                 projectMemberDao.deleteMembersByProject(projectId)
-                
-                // Save fresh members to local database
+
                 firebaseMembers.forEach { memberDto ->
                     val memberEntity = projectMemberMapper.dtoToEntity(memberDto)
                     projectMemberDao.insertMember(memberEntity)
-                    Log.d("ProjectMembersDebug", "ProjectRepositoryImpl: Saved fresh member to local DB: ${memberDto.displayName}")
                 }
-                
-                // Return the Firebase members converted to domain
+
                 return flow { emit(firebaseMembers.map { projectMemberMapper.dtoToDomain(it) }) }
             }
         } catch (e: Exception) {
-            Log.e("ProjectMembersDebug", "ProjectRepositoryImpl: Error getting members from Firebase", e)
+            Log.e(TAG, "Error getting members from Firebase", e)
         }
-        
-        // Fallback to local database if Firebase fails
-        Log.d("ProjectMembersDebug", "ProjectRepositoryImpl: Falling back to local database")
+
         return projectMemberDao.getMembersByProject(projectId).map { entities ->
-            Log.d("ProjectMembersDebug", "ProjectRepositoryImpl: Found ${entities.size} members in local database")
-            entities.forEach { entity ->
-                Log.d("ProjectMembersDebug", "ProjectRepositoryImpl: Member entity: ${entity.displayName} (${entity.userId})")
-            }
             entities.map { projectMemberMapper.entityToDomain(it) }
         }
     }
@@ -485,7 +439,7 @@ class ProjectRepositoryImpl @Inject constructor(
             try {
                 firebaseProjectSource.removeProjectMember(projectId, userId)
             } catch (e: Exception) {
-                Log.e("ProjectRepository", "Failed to sync member removal: ${e.message}")
+                Log.e(TAG, "Failed to sync member removal", e)
                 // We'll retry during background sync
             }
 

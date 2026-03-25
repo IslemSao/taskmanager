@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.saokt.taskmanager.domain.model.Task
 import com.saokt.taskmanager.domain.usecase.task.GetTasksUseCase
-import com.saokt.taskmanager.domain.usecase.task.ToggleTaskComplitionUseCase
+import com.saokt.taskmanager.domain.usecase.task.ToggleTaskCompletionUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +22,7 @@ import javax.inject.Inject
 @HiltViewModel
 class CalendarViewModel @Inject constructor(
     private val getTasksUseCase: GetTasksUseCase,
-    private val toggleTaskComplitionUseCase: ToggleTaskComplitionUseCase,
+    private val toggleTaskCompletionUseCase: ToggleTaskCompletionUseCase,
     private val getCurrentUserUseCase: GetCurrentUserUseCase
 ) : ViewModel() {
 
@@ -78,7 +78,7 @@ class CalendarViewModel @Inject constructor(
 
     fun toggleTaskCompletion(task: Task) {
         viewModelScope.launch {
-            toggleTaskComplitionUseCase(task)
+            toggleTaskCompletionUseCase(task)
         }
     }
 

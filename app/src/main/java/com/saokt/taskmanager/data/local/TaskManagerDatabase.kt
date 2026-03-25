@@ -24,7 +24,7 @@ import com.saokt.taskmanager.data.local.util.Converters
         ProjectMemberEntity::class,
         ProjectInvitationEntity::class
     ],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

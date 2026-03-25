@@ -1,4 +1,3 @@
-// Updated TaskRepositoryImpl with Firestore sync
 package com.saokt.taskmanager.data.repository
 
 import android.content.Context
@@ -10,6 +9,8 @@ import com.saokt.taskmanager.data.mapper.TaskMapper
 import com.saokt.taskmanager.data.remote.firebase.FirebaseTaskSource
 import com.saokt.taskmanager.domain.model.SyncStatus
 import com.saokt.taskmanager.domain.model.Task
+import com.saokt.taskmanager.domain.model.TaskStatus
+import com.saokt.taskmanager.domain.model.canonicalized
 import com.saokt.taskmanager.domain.repository.TaskRepository
 import com.saokt.taskmanager.domain.repository.UserRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -24,10 +25,13 @@ class TaskRepositoryImpl @Inject constructor(
     private val taskDao: TaskDao,
     private val firebaseTaskSource: FirebaseTaskSource,
     private val taskMapper: TaskMapper,
-    private val userRepository: UserRepository, // Add this dependency
+    private val userRepository: UserRepository,
     private val widgetRefresher: com.saokt.taskmanager.widget.WidgetRefresher,
     @ApplicationContext private val context: Context
 ) : TaskRepository {
+    companion object {
+        private const val TAG = "TaskRepository"
+    }
 
     override fun getAllTasks(): Flow<List<Task>> {
         return taskDao.getAllTasks().map { entities ->
@@ -36,20 +40,7 @@ class TaskRepositoryImpl @Inject constructor(
     }
 
     override fun getTaskById(taskId: String): Flow<Task?> {
-        return taskDao.getTaskById(taskId)
-            .map { entity ->
-                if (entity == null) {
-                    Log.w("TaskAccessDebug", "Repository.getTaskById: Room returned null for id=$taskId")
-                    null
-                } else {
-                    val t = taskMapper.entityToDomain(entity)
-                    Log.d(
-                        "TaskAccessDebug",
-                        "Repository.getTaskById: Room task id=${t.id} userId=${t.userId} createdBy=${t.createdBy} assignedTo=${t.assignedTo} projectId=${t.projectId}"
-                    )
-                    t
-                }
-            }
+        return taskDao.getTaskById(taskId).map { entity -> entity?.let(taskMapper::entityToDomain) }
     }
 
     override suspend fun fetchTaskByIdRemote(taskId: String): Result<Task?> {
@@ -57,16 +48,14 @@ class TaskRepositoryImpl @Inject constructor(
             val dtoResult = firebaseTaskSource.getTaskById(taskId)
             if (dtoResult.isSuccess) {
                 val dto = dtoResult.getOrNull()!!
-                val domain = taskMapper.dtoToDomain(dto)
+                val domain = taskMapper.dtoToDomain(dto).copy(syncStatus = SyncStatus.SYNCED)
                 taskDao.insertTask(taskMapper.domainToEntity(domain))
-                Log.d("TaskAccessDebug", "fetchTaskByIdRemote: inserted remote task id=${domain.id}")
                 Result.success(domain)
             } else {
-                Log.w("TaskAccessDebug", "fetchTaskByIdRemote: failed ${dtoResult.exceptionOrNull()?.message}")
                 Result.failure(dtoResult.exceptionOrNull() ?: Exception("Remote fetch failed"))
             }
         } catch (e: Exception) {
-            Log.e("TaskAccessDebug", "fetchTaskByIdRemote: exception", e)
+            Log.e(TAG, "Failed to fetch task from Firebase", e)
             Result.failure(e)
         }
     }
@@ -79,69 +68,50 @@ class TaskRepositoryImpl @Inject constructor(
 
     override suspend fun getTasksByProjectFromFirebase(projectId: String): Result<List<Task>> {
         return try {
-            Log.d("ProjectTasksDebug", "TaskRepositoryImpl: getTasksByProjectFromFirebase called for projectId: $projectId")
             val result = firebaseTaskSource.getTasksByProject(projectId)
-            
             if (result.isSuccess) {
-                val tasks = result.getOrNull()?.map { dto ->
-                    taskMapper.dtoToDomain(dto)
-                } ?: emptyList()
-                
-                Log.d("ProjectTasksDebug", "TaskRepositoryImpl: Successfully fetched ${tasks.size} tasks from Firebase")
-                tasks.forEach { task ->
-                    Log.d("ProjectTasksDebug", "TaskRepositoryImpl: Task from Firebase: ${task.title}, userId: ${task.userId}, createdBy: ${task.createdBy}")
-                }
-                
+                val tasks = result.getOrNull().orEmpty().map(taskMapper::dtoToDomain)
+                taskDao.insertTasks(tasks.map { taskMapper.domainToEntity(it.copy(syncStatus = SyncStatus.SYNCED)) })
                 Result.success(tasks)
             } else {
-                Log.e("ProjectTasksDebug", "TaskRepositoryImpl: Failed to fetch tasks from Firebase: ${result.exceptionOrNull()?.message}")
                 Result.failure(result.exceptionOrNull() ?: Exception("Failed to fetch tasks"))
             }
         } catch (e: Exception) {
-            Log.e("ProjectTasksDebug", "TaskRepositoryImpl: Exception in getTasksByProjectFromFirebase", e)
+            Log.e(TAG, "Failed to fetch project tasks from Firebase", e)
             Result.failure(e)
         }
     }
 
     override suspend fun createTask(task: Task): Result<Task> {
-        Log.d("TaskCreationDebug", "Repository: createTask called with $task")
-        Log.d("TaskCreationDebug", "Repository: calling remoteDataSource.createTask")
         try {
             val currentUser = userRepository.getCurrentUser().first()
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
 
-            // First save to local database
             val taskToSave = task.copy(
                 createdAt = Date(),
                 modifiedAt = Date(),
                 syncStatus = SyncStatus.PENDING,
                 userId = currentUser.id,
                 createdBy = task.createdBy.ifBlank { currentUser.id },
-                visibleToUserIds = listOfNotNull(
-                    currentUser.id,
-                    task.assignedTo
-                ).distinct()
-            )
+                visibleToUserIds = buildVisibleUsers(
+                    creatorId = task.createdBy.ifBlank { currentUser.id },
+                    assignedTo = task.assignedTo
+                )
+            ).canonicalized()
 
-            val entity = taskMapper.domainToEntity(taskToSave)
-            taskDao.insertTask(entity)
+            taskDao.insertTask(taskMapper.domainToEntity(taskToSave))
 
-            // Then try to immediately sync with Firestore
             tryImmediateSync(taskToSave, isNewTask = true)
-
-            // Refresh widget
             widgetRefresher.refreshTopTasksWidget()
 
             return Result.success(taskToSave)
         } catch (e: Exception) {
-            Log.e("TaskCreationDebug", "Repository: Error creating task", e)
+            Log.e(TAG, "Failed to create task", e)
             return Result.failure(e)
         }
     }
 
     override suspend fun updateTask(task: Task): Result<Task> {
-        Log.d("TaskCreationDebug", "Repository: updateTask called with $task")
-        Log.d("TaskCreationDebug", "Repository: calling remoteDataSource.updateTask")
         try {
             val currentUser = userRepository.getCurrentUser().first()
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
@@ -151,45 +121,34 @@ class TaskRepositoryImpl @Inject constructor(
                 syncStatus = SyncStatus.PENDING,
                 userId = task.userId.ifBlank { currentUser.id },
                 createdBy = task.createdBy.ifBlank { currentUser.id },
-                visibleToUserIds = listOfNotNull(
-                    task.createdBy.ifBlank { currentUser.id },
-                    task.assignedTo
-                ).distinct()
-            )
+                visibleToUserIds = buildVisibleUsers(
+                    creatorId = task.createdBy.ifBlank { currentUser.id },
+                    assignedTo = task.assignedTo
+                )
+            ).canonicalized()
 
-            val entity = taskMapper.domainToEntity(updatedTask)
-            taskDao.updateTask(entity)
+            taskDao.updateTask(taskMapper.domainToEntity(updatedTask))
 
-            // Try to immediately sync with Firestore
             tryImmediateSync(updatedTask, isNewTask = false)
-
-            // Refresh widget
             widgetRefresher.refreshTopTasksWidget()
 
             return Result.success(updatedTask)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to update task", e)
             return Result.failure(e)
         }
     }
 
     override suspend fun deleteTask(taskId: String): Result<Unit> {
         try {
-            // First delete from local database
-            Log.d("bombardiro" , "DeleteTaskRepo: $taskId")
             taskDao.deleteTask(taskId)
 
-            // Then try to delete from Firestore
-            // For proper deletion sync, you may need to mark the task as "deleted" rather than actually deleting it
-            // That would require schema changes
             try {
-                Log.d("bombardiro" , "DeleteTaskRepo Firebase: $taskId")
                 firebaseTaskSource.deleteTask(taskId)
             } catch (e: Exception) {
-                // Log but don't fail if Firestore deletion fails
-                println("Failed to delete task from Firestore: ${e.message}")
+                Log.e(TAG, "Failed to delete task from Firestore", e)
             }
 
-            // Refresh widget
             widgetRefresher.refreshTopTasksWidget()
 
             return Result.success(Unit)
@@ -198,45 +157,37 @@ class TaskRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun toggleTaskcomplition(task: Task): Result<Task> {
+    override suspend fun toggleTaskCompletion(task: Task): Result<Task> {
         try {
-            Log.d("TaskRepo", "Toggling completion for task: ${task.id}, current status: ${task.completed}")
-
             val newCompletionStatus = !task.completed
+            val newStatus = if (newCompletionStatus) TaskStatus.DONE else TaskStatus.TODO
             val modifiedAt = Date()
 
-            Log.d("TaskRepo", "New completion status will be: $newCompletionStatus")
-
-            // Use the explicit update query
             val rowsAffected = taskDao.updateTaskCompletion(
                 taskId = task.id,
                 isCompleted = newCompletionStatus,
+                status = newStatus.name,
                 modifiedAt = modifiedAt,
                 syncStatus = SyncStatus.PENDING
             )
 
-            Log.d("TaskRepo", "Database updated: $rowsAffected rows affected")
-
             if (rowsAffected <= 0) {
-                Log.e("TaskRepo", "No rows updated in database!")
                 return Result.failure(Exception("Failed to update task in database"))
             }
 
             val updatedTask = task.copy(
                 completed = newCompletionStatus,
+                status = newStatus,
                 modifiedAt = modifiedAt,
                 syncStatus = SyncStatus.PENDING
-            )
+            ).canonicalized()
 
-            // Try to immediately sync with Firestore
             tryImmediateSync(updatedTask, isNewTask = false)
-
-            // Refresh widget
             widgetRefresher.refreshTopTasksWidget()
 
             return Result.success(updatedTask)
         } catch (e: Exception) {
-            Log.e("TaskRepo", "Error toggling task completion", e)
+            Log.e(TAG, "Failed to toggle task completion", e)
             return Result.failure(e)
         }
     }
@@ -252,17 +203,15 @@ class TaskRepositoryImpl @Inject constructor(
 
             val completedTask = task.copy(
                 completed = true,
+                status = TaskStatus.DONE,
                 modifiedAt = Date(),
                 syncStatus = SyncStatus.PENDING
-            )
+            ).canonicalized()
 
             val entity = taskMapper.domainToEntity(completedTask)
             taskDao.updateTask(entity)
 
-            // Try to immediately sync with Firestore
             tryImmediateSync(completedTask, isNewTask = false)
-
-            // Refresh widget
             widgetRefresher.refreshTopTasksWidget()
 
             return Result.success(completedTask)
@@ -279,59 +228,27 @@ class TaskRepositoryImpl @Inject constructor(
     }
 
     private suspend fun tryImmediateSync(task: Task, isNewTask: Boolean) {
-        // Skip sync if no network connection
         if (!isNetworkAvailable()) {
-            Log.i("TaskSync", "No network connection - task will sync when connection is restored")
             return
         }
 
         try {
             val currentUser = userRepository.getCurrentUser().first()
-            if (currentUser != null) {
-                val dto = taskMapper.domainToDto(task).copy(
-                    userId = task.userId.ifBlank { currentUser.id },
-                    createdBy = if (task.createdBy.isBlank()) currentUser.id else task.createdBy,
-                    visibleToUserIds = task.visibleToUserIds.ifEmpty {
-                        listOfNotNull(
-                            if (task.createdBy.isBlank()) currentUser.id else task.createdBy,
-                            task.assignedTo
-                        ).distinct()
-                    }
-                )
-                Log.d("TaskCreationDebug", "tryImmediateSync: currentUser.id: ${currentUser.id}")
-                Log.d("TaskCreationDebug", "tryImmediateSync: assignedTo: ${task.assignedTo}")
-                Log.d("TaskCreationDebug", "tryImmediateSync: dto: $dto")
-                val result = if (isNewTask) {
-                    Log.d("TaskCreationDebug", "tryImmediateSync: Calling createTask")
-                    firebaseTaskSource.createTask(dto)
-                } else {
-                    Log.d("TaskCreationDebug", "tryImmediateSync: Calling updateTask")
-                    firebaseTaskSource.updateTask(dto)
-                }
-                if (result.isSuccess) {
-                    Log.d("TaskCreationDebug", "tryImmediateSync: Sync successful")
-                    // If successful, update the sync status in Room
-                    taskDao.updateSyncStatus(task.id, SyncStatus.SYNCED)
-                } else {
-                    Log.w("TaskCreationDebug", "tryImmediateSync: Sync failed: ${result.exceptionOrNull()?.message}")
-                    // Keep the task as PENDING for background sync to retry later
-                }
-            } else {
-                Log.e("TaskCreationDebug", "tryImmediateSync: No current user")
+            if (currentUser == null) {
+                return
+            }
+
+            val syncResult = syncTaskToRemote(task, currentUser.id, preferCreate = isNewTask)
+            if (syncResult.isFailure) {
+                Log.w(TAG, "Immediate task sync failed: ${syncResult.exceptionOrNull()?.message}")
             }
         } catch (e: Exception) {
-            // Network or other errors should not crash the app
-            // The task is already saved locally with PENDING status for background sync
-            Log.w("TaskSync", "Immediate sync failed (will retry in background): ${e.message}")
+            Log.w(TAG, "Immediate sync failed; task will retry later", e)
             when (e) {
                 is java.net.UnknownHostException,
                 is java.net.ConnectException,
-                is java.net.SocketTimeoutException -> {
-                    Log.i("TaskSync", "Network connectivity issue - task will sync when connection is restored")
-                }
-                else -> {
-                    Log.e("TaskSync", "Unexpected sync error", e)
-                }
+                is java.net.SocketTimeoutException -> Unit
+                else -> Log.e(TAG, "Unexpected task sync error", e)
             }
         }
     }
@@ -347,21 +264,13 @@ class TaskRepositoryImpl @Inject constructor(
 
             pendingTasks.forEach { entity ->
                 val task = taskMapper.entityToDomain(entity)
-                val dto = taskMapper.domainToDto(task).copy(
-                    userId = task.userId.ifBlank { currentUser.id },
-                    createdBy = task.createdBy.ifBlank { currentUser.id },
-                    visibleToUserIds = task.visibleToUserIds.ifEmpty {
-                        listOfNotNull(
-                            task.createdBy.ifBlank { currentUser.id },
-                            task.assignedTo
-                        ).distinct()
-                    }
+                val result = syncTaskToRemote(
+                    task = task,
+                    currentUserId = currentUser.id,
+                    preferCreate = task.createdAt == task.modifiedAt
                 )
 
-                val result = firebaseTaskSource.updateTask(dto)
-
                 if (result.isSuccess) {
-                    taskDao.updateSyncStatus(entity.id, SyncStatus.SYNCED)
                     syncedCount++
                 } else {
                     taskDao.updateSyncStatus(entity.id, SyncStatus.SYNC_FAILED)
@@ -373,4 +282,51 @@ class TaskRepositoryImpl @Inject constructor(
             return Result.failure(e)
         }
     }
+
+    private suspend fun syncTaskToRemote(
+        task: Task,
+        currentUserId: String,
+        preferCreate: Boolean
+    ): Result<Task> {
+        val normalizedTask = task.canonicalized()
+        val dto = taskMapper.domainToDto(normalizedTask).copy(
+            userId = normalizedTask.userId.ifBlank { currentUserId },
+            createdBy = normalizedTask.createdBy.ifBlank { currentUserId },
+            visibleToUserIds = normalizedTask.visibleToUserIds.ifEmpty {
+                buildVisibleUsers(
+                    creatorId = normalizedTask.createdBy.ifBlank { currentUserId },
+                    assignedTo = normalizedTask.assignedTo
+                )
+            }
+        )
+
+        val primaryResult = if (preferCreate) {
+            firebaseTaskSource.createTask(dto)
+        } else {
+            firebaseTaskSource.updateTask(dto)
+        }
+
+        val finalResult = when {
+            primaryResult.isSuccess -> primaryResult
+            !preferCreate && isTaskNotFound(primaryResult.exceptionOrNull()) -> firebaseTaskSource.createTask(dto)
+            else -> primaryResult
+        }
+
+        if (finalResult.isFailure) {
+            return Result.failure(finalResult.exceptionOrNull() ?: Exception("Task sync failed"))
+        }
+
+        val syncedTask = taskMapper.dtoToDomain(finalResult.getOrThrow())
+            .copy(syncStatus = SyncStatus.SYNCED)
+            .canonicalized()
+        taskDao.insertTask(taskMapper.domainToEntity(syncedTask))
+        taskDao.updateSyncStatus(task.id, SyncStatus.SYNCED)
+        return Result.success(syncedTask)
+    }
+
+    private fun buildVisibleUsers(creatorId: String, assignedTo: String?): List<String> =
+        listOfNotNull(creatorId, assignedTo).distinct()
+
+    private fun isTaskNotFound(error: Throwable?): Boolean =
+        error is IllegalStateException && error.message == "Task not found"
 }

@@ -1,6 +1,7 @@
 package com.saokt.taskmanager.domain.usecase.task
 
 import com.saokt.taskmanager.domain.model.Task
+import com.saokt.taskmanager.domain.model.canonicalized
 import com.saokt.taskmanager.domain.repository.TaskRepository
 import com.saokt.taskmanager.domain.repository.UserRepository
 import kotlinx.coroutines.flow.first
@@ -21,8 +22,8 @@ class CreateTaskUseCase @Inject constructor(
         // Set createdBy to current user if not set
         val taskWithUser = task.copy(
             createdBy = if (task.createdBy.isBlank()) currentUser.id else task.createdBy
-        )
-        
+        ).canonicalized()
+
         return taskRepository.createTask(taskWithUser)
     }
 }

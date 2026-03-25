@@ -50,10 +50,11 @@ interface TaskDao {
     @Query("DELETE FROM tasks")
     suspend fun deleteAllTasks()
 
-    @Query("UPDATE tasks SET completed = :isCompleted, modifiedAt = :modifiedAt, syncStatus = :syncStatus WHERE id = :taskId")
+    @Query("UPDATE tasks SET completed = :isCompleted, status = :status, modifiedAt = :modifiedAt, syncStatus = :syncStatus WHERE id = :taskId")
     suspend fun updateTaskCompletion(
         taskId: String,
         isCompleted: Boolean,
+        status: String,
         modifiedAt: Date,
         syncStatus: SyncStatus
     ): Int

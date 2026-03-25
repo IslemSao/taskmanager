@@ -38,8 +38,9 @@ class FirebaseProjectSource @Inject constructor(
                 return Result.failure(IllegalAccessException("Not authorized to create this project"))
             }
 
-            val normalizedMembers = projectDto.members.ifEmpty { listOf(userId) }.distinct()
+            val normalizedMembers = normalizeMemberIds(projectDto.ownerId.ifBlank { userId }, projectDto.members)
             val normalizedProject = projectDto.copy(
+                ownerId = userId,
                 members = normalizedMembers,
                 memberIds = normalizedMembers
             )
@@ -85,6 +86,7 @@ class FirebaseProjectSource @Inject constructor(
 
     suspend fun deleteProject(projectId: String): Result<Unit> {
         return try {
+            requireProjectOwner(projectId)
             projectsCollection.document(projectId).delete().await()
             Result.success(Unit)
         } catch (e: Exception) {
@@ -101,8 +103,9 @@ class FirebaseProjectSource @Inject constructor(
                 return Result.failure(IllegalAccessException("Not authorized to update this project"))
             }
 
-            val normalizedMembers = projectDto.members.ifEmpty { listOf(userId) }.distinct()
+            val normalizedMembers = normalizeMemberIds(projectDto.ownerId.ifBlank { userId }, projectDto.members)
             val normalizedProject = projectDto.copy(
+                ownerId = userId,
                 members = normalizedMembers,
                 memberIds = normalizedMembers
             )
@@ -135,9 +138,7 @@ class FirebaseProjectSource @Inject constructor(
 
     suspend fun getProjectById(projectId: String): Result<ProjectDto?> {
         return try {
-            val project = projectsCollection.document(projectId).get().await()
-                .toDto<ProjectDto>()
-                ?.copy(id = projectId)
+            val project = getAccessibleProject(projectId)
             Result.success(project)
         } catch (e: Exception) {
             Log.e(TAG, "getProjectById failed", e)
@@ -147,6 +148,7 @@ class FirebaseProjectSource @Inject constructor(
 
     suspend fun getProjectMembers(projectId: String): Result<List<ProjectMemberDto>> {
         return try {
+            requireProjectAccess(projectId)
             migrateLegacyMembersIfNeeded(projectId)
 
             val snapshot = projectsCollection.document(projectId)
@@ -174,6 +176,7 @@ class FirebaseProjectSource @Inject constructor(
             if (invitationDto.inviterId != userId) {
                 return Result.failure(IllegalAccessException("Not authorized to send this invitation"))
             }
+            requireProjectOwner(invitationDto.projectId)
 
             invitationsCollection.document(invitationDto.id).set(invitationDto).await()
             Result.success(invitationDto)
@@ -251,6 +254,7 @@ class FirebaseProjectSource @Inject constructor(
 
     suspend fun updateInvitation(invitationDto: ProjectInvitationDto): Result<ProjectInvitationDto> {
         return try {
+            requireInvitationAccess(invitationDto)
             invitationsCollection.document(invitationDto.id).set(invitationDto, SetOptions.merge()).await()
             Result.success(invitationDto)
         } catch (e: Exception) {
@@ -261,6 +265,11 @@ class FirebaseProjectSource @Inject constructor(
 
     suspend fun getInvitations(userId: String): Result<List<ProjectInvitationDto>> {
         return try {
+            val currentUserId = auth.currentUser?.uid
+                ?: return Result.failure(IllegalStateException("User not authenticated"))
+            if (currentUserId != userId) {
+                return Result.failure(IllegalAccessException("Not authorized to access these invitations"))
+            }
             val email = auth.currentUser?.email
             val queries = buildList {
                 add(invitationsCollection.whereEqualTo("inviteeId", userId).get().await())
@@ -285,6 +294,9 @@ class FirebaseProjectSource @Inject constructor(
             return
         }
 
+        val project = projectsCollection.document(projectId).get().await().toDto<ProjectDto>()
+            ?: return
+
         val legacyDocs = (
             firestore.collection(LEGACY_MEMBERS_COLLECTION).whereEqualTo("projectId", projectId).get().await().documents +
                 firestore.collection(LEGACY_MEMBERS_COLLECTION_CAMEL).whereEqualTo("projectId", projectId).get().await().documents
@@ -306,15 +318,63 @@ class FirebaseProjectSource @Inject constructor(
             batch.set(subcollection.document(mappedMember.userId), mappedMember)
         }
         if (memberIds.isNotEmpty()) {
+            val normalizedMemberIds = normalizeMemberIds(project.ownerId, memberIds)
             batch.update(
                 projectsCollection.document(projectId),
                 mapOf(
-                    "members" to memberIds.distinct(),
-                    "memberIds" to memberIds.distinct()
+                    "members" to normalizedMemberIds,
+                    "memberIds" to normalizedMemberIds
                 )
             )
         }
         batch.commit().await()
+    }
+
+    private fun normalizeMemberIds(ownerId: String, memberIds: List<String>): List<String> =
+        buildList {
+            if (ownerId.isNotBlank()) {
+                add(ownerId)
+            }
+            addAll(memberIds.filter { it.isNotBlank() })
+        }.distinct()
+
+    private suspend fun getAccessibleProject(projectId: String): ProjectDto? {
+        val snapshot = projectsCollection.document(projectId).get().await()
+        val project = snapshot.toDto<ProjectDto>()?.copy(id = projectId) ?: return null
+        val userId = auth.currentUser?.uid ?: throw IllegalStateException("User not authenticated")
+        val canAccess = project.ownerId == userId ||
+            project.members.contains(userId) ||
+            project.memberIds.contains(userId)
+        if (!canAccess) {
+            throw IllegalAccessException("Not authorized to access this project")
+        }
+        return project
+    }
+
+    private suspend fun requireProjectAccess(projectId: String) {
+        getAccessibleProject(projectId)
+            ?: throw IllegalStateException("Project not found")
+    }
+
+    private suspend fun requireProjectOwner(projectId: String) {
+        val project = getAccessibleProject(projectId)
+            ?: throw IllegalStateException("Project not found")
+        val userId = auth.currentUser?.uid ?: throw IllegalStateException("User not authenticated")
+        if (project.ownerId != userId) {
+            throw IllegalAccessException("Only the project owner can perform this action")
+        }
+    }
+
+    private suspend fun requireInvitationAccess(invitationDto: ProjectInvitationDto) {
+        val currentUser = auth.currentUser ?: throw IllegalStateException("User not authenticated")
+        val currentEmail = currentUser.email?.trim()?.lowercase()
+        val inviteeEmail = invitationDto.inviteeEmail.trim().lowercase()
+        val canAccess = invitationDto.inviterId == currentUser.uid ||
+            invitationDto.inviteeId == currentUser.uid ||
+            (!currentEmail.isNullOrBlank() && currentEmail == inviteeEmail)
+        if (!canAccess) {
+            throw IllegalAccessException("Not authorized to update this invitation")
+        }
     }
 
     private inline fun <reified T> DocumentSnapshot.toDto(): T? = toObject(T::class.java)

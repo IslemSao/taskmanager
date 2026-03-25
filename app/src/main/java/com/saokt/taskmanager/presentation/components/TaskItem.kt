@@ -43,8 +43,6 @@ fun TaskItem(
     projects: List<com.saokt.taskmanager.domain.model.Project> = emptyList()
 ) {
     val isAssignedToMe = currentUser != null && task.assignedTo == currentUser.id && task.createdBy != currentUser.id
-    val isCreatedByMe = currentUser != null && task.createdBy == currentUser.id
-    val isOwner = currentUser != null && projects.any { it.ownerId == currentUser.id && it.id == task.projectId }
     val assignee = projectMembers.find { it.userId == task.assignedTo }
     val creator = projectMembers.find { it.userId == task.createdBy }
     val assigner = projectMembers.find { it.userId == task.assignedBy }

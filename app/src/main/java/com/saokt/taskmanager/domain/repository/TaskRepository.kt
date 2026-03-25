@@ -13,6 +13,6 @@ interface TaskRepository {
     suspend fun updateTask(task: Task): Result<Task>
     suspend fun deleteTask(taskId: String): Result<Unit>
     suspend fun completeTask(taskId: String): Result<Task>
-    suspend fun syncPendingTasks(): Result<Int> // Returns number of synced tasks
-    suspend fun toggleTaskcomplition(task: Task): Result<Task>
+    suspend fun syncPendingTasks(): Result<Int>
+    suspend fun toggleTaskCompletion(task: Task): Result<Task>
 }

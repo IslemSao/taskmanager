@@ -3,29 +3,37 @@ package com.saokt.taskmanager.data.mapper
 import com.saokt.taskmanager.data.local.entity.TaskEntity
 import com.saokt.taskmanager.data.remote.dto.TaskDto
 import com.saokt.taskmanager.domain.model.Task
+import com.saokt.taskmanager.domain.model.TaskStatus
+import com.saokt.taskmanager.domain.model.TaskType
+import com.saokt.taskmanager.domain.model.canonicalTaskStatus
+import com.saokt.taskmanager.domain.model.canonicalized
 import javax.inject.Inject
 
 class TaskMapper @Inject constructor() {
 
     fun domainToEntity(task: Task): TaskEntity {
+        val normalizedTask = task.canonicalized()
         return TaskEntity(
-            id = task.id,
-            title = task.title,
-            description = task.description,
-            dueDate = task.dueDate,
-            completed = task.completed,
-            priority = task.priority,
-            projectId = task.projectId,
-            labels = task.labels,
-            subtasks = task.subtasks,
-            createdAt = task.createdAt,
-            modifiedAt = task.modifiedAt,
-            syncStatus = task.syncStatus,
-            userId = task.userId,
-            createdBy = task.createdBy,
-            assignedTo = task.assignedTo,
-            assignedBy = task.assignedBy,
-            visibleToUserIds = task.visibleToUserIds
+            id = normalizedTask.id,
+            title = normalizedTask.title,
+            description = normalizedTask.description,
+            startDate = normalizedTask.startDate,
+            dueDate = normalizedTask.dueDate,
+            completed = normalizedTask.completed,
+            status = normalizedTask.status,
+            type = normalizedTask.type,
+            priority = normalizedTask.priority,
+            projectId = normalizedTask.projectId,
+            labels = normalizedTask.labels,
+            subtasks = normalizedTask.subtasks,
+            createdAt = normalizedTask.createdAt,
+            modifiedAt = normalizedTask.modifiedAt,
+            syncStatus = normalizedTask.syncStatus,
+            userId = normalizedTask.userId,
+            createdBy = normalizedTask.createdBy,
+            assignedTo = normalizedTask.assignedTo,
+            assignedBy = normalizedTask.assignedBy,
+            visibleToUserIds = normalizedTask.visibleToUserIds
         )
     }
 
@@ -34,8 +42,11 @@ class TaskMapper @Inject constructor() {
             id = entity.id,
             title = entity.title,
             description = entity.description,
+            startDate = entity.startDate,
             dueDate = entity.dueDate,
             completed = entity.completed,
+            status = canonicalTaskStatus(entity.status, entity.completed),
+            type = entity.type,
             priority = entity.priority,
             projectId = entity.projectId,
             labels = entity.labels,
@@ -49,40 +60,48 @@ class TaskMapper @Inject constructor() {
             assignedAt = null, // Set if you store it
             assignedBy = entity.assignedBy,
             visibleToUserIds = entity.visibleToUserIds
-        )
+        ).canonicalized()
     }
 
     fun domainToDto(task: Task): TaskDto {
+        val normalizedTask = task.canonicalized()
         return TaskDto(
-            id = task.id,
-            title = task.title,
-            description = task.description,
-            dueDate = task.dueDate,
-            completed = task.completed,
-            priority = task.priority.name,
-            projectId = task.projectId,
-            labels = task.labels,
-            subtasks = task.subtasks.map {
+            id = normalizedTask.id,
+            title = normalizedTask.title,
+            description = normalizedTask.description,
+            startDate = normalizedTask.startDate,
+            dueDate = normalizedTask.dueDate,
+            completed = normalizedTask.completed,
+            status = normalizedTask.status.name,
+            type = normalizedTask.type.name,
+            priority = normalizedTask.priority.name,
+            projectId = normalizedTask.projectId,
+            labels = normalizedTask.labels,
+            subtasks = normalizedTask.subtasks.map {
                 mapOf("id" to it.id, "title" to it.title, "isCompleted" to it.isCompleted)
             },
-            createdAt = task.createdAt,
-            modifiedAt = task.modifiedAt,
-            userId = task.userId,
-            createdBy = task.createdBy,
-            assignedTo = task.assignedTo,
-            assignedAt = task.assignedAt,
-            assignedBy = task.assignedBy,
-            visibleToUserIds = task.visibleToUserIds
+            createdAt = normalizedTask.createdAt,
+            modifiedAt = normalizedTask.modifiedAt,
+            userId = normalizedTask.userId,
+            createdBy = normalizedTask.createdBy,
+            assignedTo = normalizedTask.assignedTo,
+            assignedAt = normalizedTask.assignedAt,
+            assignedBy = normalizedTask.assignedBy,
+            visibleToUserIds = normalizedTask.visibleToUserIds
         )
     }
 
     fun entityToDto(entity: TaskEntity): TaskDto {
+        val normalizedStatus = canonicalTaskStatus(entity.status, entity.completed)
         return TaskDto(
             id = entity.id,
             title = entity.title,
             description = entity.description,
+            startDate = entity.startDate,
             dueDate = entity.dueDate,
             completed = entity.completed,
+            status = normalizedStatus.name,
+            type = entity.type.name,
             priority = entity.priority.name,
             projectId = entity.projectId,
             labels = entity.labels,
@@ -105,8 +124,19 @@ class TaskMapper @Inject constructor() {
             id = dto.id,
             title = dto.title,
             description = dto.description,
+            startDate = dto.startDate,
             dueDate = dto.dueDate,
             completed = dto.completed,
+            status = try {
+                dto.status?.let { TaskStatus.valueOf(it.uppercase()) }
+            } catch (_: Exception) {
+                null
+            } ?: canonicalTaskStatus(null, dto.completed),
+            type = try {
+                dto.type?.let { TaskType.valueOf(it.uppercase()) }
+            } catch (_: Exception) {
+                null
+            } ?: TaskType.TASK,
             priority = try {
                 com.saokt.taskmanager.domain.model.Priority.valueOf(dto.priority.uppercase())
             } catch (e: Exception) {
@@ -134,6 +164,6 @@ class TaskMapper @Inject constructor() {
             assignedAt = dto.assignedAt,
             assignedBy = dto.assignedBy,
             visibleToUserIds = dto.visibleToUserIds
-        )
+        ).canonicalized()
     }
 }

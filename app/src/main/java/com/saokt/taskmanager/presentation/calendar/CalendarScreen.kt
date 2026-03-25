@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,13 +16,11 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,43 +38,44 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.saokt.taskmanager.presentation.components.AppTopBar
+import com.saokt.taskmanager.presentation.components.EmptyStateCard
+import com.saokt.taskmanager.presentation.components.HeroCard
+import com.saokt.taskmanager.presentation.components.SectionCard
 import com.saokt.taskmanager.presentation.components.TaskItem
+import com.saokt.taskmanager.ui.theme.AppTheme
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
-import kotlin.math.abs
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarScreen(
     navController: NavController,
     viewModel: CalendarViewModel = hiltViewModel(),
-    onTaskClick: (String) -> Unit = { /* default no-op */ }
+    onTaskClick: (String) -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Calendar") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
+            AppTopBar(
+                title = "Calendar",
+                subtitle = "See what is scheduled and what still needs a plan",
+                onBack = { navController.popBackStack() }
             )
-        }
+        },
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         CalendarContent(
             padding = padding,
             state = state,
-            onPrev = { viewModel.previousMonth() },
-            onNext = { viewModel.nextMonth() },
-            onSelectDate = { viewModel.selectDate(it) },
+            onPrev = viewModel::previousMonth,
+            onNext = viewModel::nextMonth,
+            onSelectDate = viewModel::selectDate,
             onTaskClick = onTaskClick,
-            onToggleTask = { viewModel.toggleTaskCompletion(it) }
+            onToggleTask = viewModel::toggleTaskCompletion
         )
     }
 }
@@ -92,67 +90,63 @@ private fun CalendarContent(
     onTaskClick: (String) -> Unit,
     onToggleTask: (com.saokt.taskmanager.domain.model.Task) -> Unit
 ) {
-    Column(
+    val selectedDate = state.selectedDate ?: LocalDate.now()
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(padding)
+            .padding(padding),
+        contentPadding = PaddingValues(
+            start = AppTheme.screenPadding,
+            end = AppTheme.screenPadding,
+            top = 8.dp,
+            bottom = 32.dp
+        ),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.sectionSpacing)
     ) {
-        MonthHeader(
-            month = state.currentMonth,
-            onPrev = onPrev,
-            onNext = onNext
-        )
+        item {
+            HeroCard(
+                eyebrow = "Planner",
+                title = state.currentMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault()) + " " + state.currentMonth.year,
+                body = "Browse the month, select a day, and review scheduled tasks without switching context.",
+                stats = listOf(
+                    "Selected" to selectedDate.dayOfMonth.toString(),
+                    "Tasks" to state.tasksForSelectedDate.size.toString()
+                )
+            )
+        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        item {
+            SectionCard(title = "Month view") {
+                MonthHeader(month = state.currentMonth, onPrev = onPrev, onNext = onNext)
+                DayOfWeekHeader()
+                MonthGrid(
+                    month = state.currentMonth,
+                    selectedDate = selectedDate,
+                    hasTasks = { date -> state.tasksByDate[date]?.isNotEmpty() == true },
+                    onSelectDate = onSelectDate
+                )
+            }
+        }
 
-        DayOfWeekHeader()
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        MonthGrid(
-            month = state.currentMonth,
-            selectedDate = state.selectedDate ?: LocalDate.now(),
-            hasTasks = { date -> (state.tasksByDate[date]?.isNotEmpty() == true) },
-            onSelectDate = onSelectDate
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text(
-            text = "Tasks on " + (state.selectedDate ?: LocalDate.now()).toString(),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (state.tasksForSelectedDate.isEmpty()) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Text(
-                            text = "No tasks",
-                            modifier = Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else {
-                items(state.tasksForSelectedDate.size) { index ->
-                    val task = state.tasksForSelectedDate[index]
-                    TaskItem(
-                        task = task,
-                        onClick = { onTaskClick(task.id) },
-                        onCompletionToggle = { onToggleTask(task) }
+        item {
+            SectionCard(title = "Tasks on $selectedDate") {
+                if (state.tasksForSelectedDate.isEmpty()) {
+                    EmptyStateCard(
+                        title = "No tasks planned",
+                        body = "This day is clear right now. Add or schedule tasks to build your plan.",
+                        icon = Icons.Default.DateRange
                     )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        state.tasksForSelectedDate.forEach { task ->
+                            TaskItem(
+                                task = task,
+                                onClick = { onTaskClick(task.id) },
+                                onCompletionToggle = { onToggleTask(task) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -162,9 +156,7 @@ private fun CalendarContent(
 @Composable
 private fun MonthHeader(month: YearMonth, onPrev: () -> Unit, onNext: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -194,14 +186,12 @@ private fun DayOfWeekHeader() {
         DayOfWeek.SATURDAY
     )
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        days.forEach { d ->
+        days.forEach { day ->
             Text(
-                text = d.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
+                text = day.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -223,28 +213,25 @@ private fun MonthGrid(
         else -> firstOfMonth.dayOfWeek.value
     }
     val daysInMonth = month.lengthOfMonth()
-
     val cells: List<LocalDate?> = buildList {
         repeat(firstDayOfWeekIndex) { add(null) }
-        for (d in 1..daysInMonth) add(month.atDay(d))
+        for (day in 1..daysInMonth) add(month.atDay(day))
         while (size % 7 != 0) add(null)
     }
 
     LazyVerticalGrid(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth(),
         columns = GridCells.Fixed(7),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         userScrollEnabled = false,
-        contentPadding = PaddingValues(bottom = 8.dp)
+        contentPadding = PaddingValues(top = 8.dp)
     ) {
         items(cells) { date ->
             DayCell(
                 date = date,
                 selected = date != null && date == selectedDate,
-                hasTasks = date?.let { hasTasks(it) } == true,
+                hasTasks = date?.let(hasTasks) == true,
                 onClick = { date?.let(onSelectDate) }
             )
         }
@@ -258,10 +245,9 @@ private fun DayCell(
     hasTasks: Boolean,
     onClick: () -> Unit
 ) {
-    val shape = MaterialTheme.shapes.small
     Box(
         modifier = Modifier
-            .clip(shape)
+            .clip(MaterialTheme.shapes.medium)
             .background(
                 when {
                     selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
@@ -270,21 +256,18 @@ private fun DayCell(
                 }
             )
             .clickable(enabled = date != null, onClick = onClick)
-            .height(42.dp),
+            .height(48.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = date?.dayOfMonth?.toString() ?: "",
-                textAlign = TextAlign.Center
-            )
+            Text(text = date?.dayOfMonth?.toString() ?: "", textAlign = TextAlign.Center)
             if (hasTasks) {
                 Box(
                     modifier = Modifier
-                        .padding(top = 2.dp)
+                        .padding(top = 3.dp)
                         .height(4.dp)
-                        .fillMaxWidth(0.2f)
-                        .clip(shape)
+                        .fillMaxWidth(0.22f)
+                        .clip(MaterialTheme.shapes.small)
                         .background(MaterialTheme.colorScheme.primary)
                 )
             }

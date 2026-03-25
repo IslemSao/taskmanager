@@ -1,23 +1,56 @@
 package com.saokt.taskmanager.presentation.notification
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.foundation.BorderStroke
-import androidx.navigation.NavController
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.saokt.taskmanager.domain.model.*
+import androidx.navigation.NavController
+import com.saokt.taskmanager.domain.model.NotificationPreference
+import com.saokt.taskmanager.domain.model.NotificationPriority
+import com.saokt.taskmanager.domain.model.NotificationType
+import com.saokt.taskmanager.presentation.components.AppTopBar
+import com.saokt.taskmanager.presentation.components.HeroCard
+import com.saokt.taskmanager.presentation.components.SectionCard
+import com.saokt.taskmanager.ui.theme.AppTheme
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -39,34 +72,25 @@ fun NotificationSettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { 
-                    Text(
-                        text = "Notification Settings",
-                        style = MaterialTheme.typography.titleLarge
-                    ) 
-                },
-                navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
+            AppTopBar(
+                title = "Notification settings",
+                subtitle = "Tune what reaches you and when",
+                onBack = { navController.navigateUp() },
                 actions = {
-                    IconButton(onClick = { viewModel.resetToDefaults() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Reset to defaults")
+                    androidx.compose.material3.IconButton(onClick = { viewModel.resetToDefaults() }) {
+                        androidx.compose.material3.Icon(Icons.Default.Refresh, contentDescription = "Reset to defaults")
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                )
+                }
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.background
     ) { padding ->
         if (state.isLoading) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
@@ -88,199 +112,164 @@ private fun EnhancedNotificationSettingsContent(
     viewModel: NotificationSettingsViewModel,
     modifier: Modifier = Modifier
 ) {
-    val scrollState = rememberScrollState()
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = AppTheme.screenPadding,
+            end = AppTheme.screenPadding,
+            top = 8.dp,
+            bottom = 32.dp
+        ),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.sectionSpacing)
     ) {
-        // Master Notifications Toggle
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                            text = "Master Notifications",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                            text = "Enable or disable all notifications",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                        checked = state.globalSettings.masterNotificationsEnabled,
-                        onCheckedChange = { viewModel.toggleMasterNotifications(it) }
-                    )
-                }
-            }
-        }
-
-        // Quiet Hours Section
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                    text = "Quiet Hours",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                        text = "Enable Quiet Hours",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        Switch(
-                        checked = state.globalSettings.quietHoursEnabled,
-                        onCheckedChange = { viewModel.toggleQuietHours(it) }
-                        )
-                    }
-
-                if (state.globalSettings.quietHoursEnabled) {
-                    HorizontalDivider()
-
-                    var showStartTimePicker by remember { mutableStateOf(false) }
-                    var showEndTimePicker by remember { mutableStateOf(false) }
-
-                                        val timeFormatter = DateTimeFormatter.ofPattern("h:mm a")
-
-                    // Start Time Picker Dialog
-                    if (showStartTimePicker) {
-                        SimpleTimePickerDialog(
-                            title = "Select Start Time",
-                            currentTime = state.globalSettings.quietHoursStart,
-                            onDismissRequest = { showStartTimePicker = false },
-                            onTimeSelected = { newTime ->
-                                viewModel.updateQuietHoursStart(newTime)
-                                showStartTimePicker = false
-                            }
-                        )
-                    }
-
-                    // End Time Picker Dialog
-                    if (showEndTimePicker) {
-                        SimpleTimePickerDialog(
-                            title = "Select End Time",
-                            currentTime = state.globalSettings.quietHoursEnd,
-                            onDismissRequest = { showEndTimePicker = false },
-                            onTimeSelected = { newTime ->
-                                viewModel.updateQuietHoursEnd(newTime)
-                                showEndTimePicker = false
-                            }
-                        )
-                    }
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = state.globalSettings.quietHoursStart.format(timeFormatter),
-                            onValueChange = { },
-                            label = { Text("Start Time") },
-                            modifier = Modifier.weight(1f),
-                            readOnly = true,
-                            trailingIcon = {
-                                IconButton(onClick = { showStartTimePicker = true }) {
-                                    Icon(Icons.Default.Schedule, contentDescription = "Select start time")
-                                }
-                            }
-                        )
-
-                        OutlinedTextField(
-                            value = state.globalSettings.quietHoursEnd.format(timeFormatter),
-                            onValueChange = { },
-                            label = { Text("End Time") },
-                            modifier = Modifier.weight(1f),
-                            readOnly = true,
-                            trailingIcon = {
-                                IconButton(onClick = { showEndTimePicker = true }) {
-                                    Icon(Icons.Default.Schedule, contentDescription = "Select end time")
-                                }
-                            }
-                        )
-                    }
-
-                    Text(
-                        text = "Notifications will be silenced during these hours",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
-        // Notification Types Section
-        Text(
-            text = "Notification Types",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        state.notificationPreferences.forEach { preference ->
-            NotificationTypeCard(
-                preference = preference,
-                onToggle = { viewModel.toggleNotificationType(preference.type, it) },
-                onUpdatePriority = { viewModel.updateNotificationPriority(preference.type, it) }
+        item {
+            HeroCard(
+                eyebrow = "Controls",
+                title = "${state.notificationPreferences.count { it.enabled }} notification types active",
+                body = "Keep important alerts on, quiet the noise, and use quiet hours to protect deep work or sleep.",
+                stats = listOf(
+                    "Master" to if (state.globalSettings.masterNotificationsEnabled) "On" else "Off",
+                    "Quiet hours" to if (state.globalSettings.quietHoursEnabled) "On" else "Off"
+                )
             )
         }
 
-            // Status Information
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+        item {
+            SectionCard(title = "Global controls") {
+                SettingSwitchRow(
+                    title = "Master notifications",
+                    subtitle = "Enable or disable all notifications at once",
+                    checked = state.globalSettings.masterNotificationsEnabled,
+                    onCheckedChange = viewModel::toggleMasterNotifications
                 )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                    text = "Status",
-                        style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                HorizontalDivider()
+                SettingSwitchRow(
+                    title = "Quiet hours",
+                    subtitle = "Silence notifications during protected hours",
+                    checked = state.globalSettings.quietHoursEnabled,
+                    onCheckedChange = viewModel::toggleQuietHours
                 )
+                if (state.globalSettings.quietHoursEnabled) {
+                    QuietHoursControls(
+                        start = state.globalSettings.quietHoursStart,
+                        end = state.globalSettings.quietHoursEnd,
+                        onUpdateStart = viewModel::updateQuietHoursStart,
+                        onUpdateEnd = viewModel::updateQuietHoursEnd
+                    )
+                }
+            }
+        }
 
-                Text(
-                    text = "Master notifications: ${if (state.globalSettings.masterNotificationsEnabled) "Enabled" else "Disabled"}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                Text(
-                    text = "Quiet hours: ${if (state.globalSettings.quietHoursEnabled) "Active" else "Inactive"}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                Text(
-                    text = "Active notification types: ${state.notificationPreferences.count { it.enabled }}/${state.notificationPreferences.size}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+        item {
+            SectionCard(title = "Notification types") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    state.notificationPreferences.forEach { preference ->
+                        NotificationTypeCard(
+                            preference = preference,
+                            onToggle = { viewModel.toggleNotificationType(preference.type, it) },
+                            onUpdatePriority = { viewModel.updateNotificationPriority(preference.type, it) }
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+            Text(
+                text = subtitle,
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun QuietHoursControls(
+    start: LocalTime,
+    end: LocalTime,
+    onUpdateStart: (LocalTime) -> Unit,
+    onUpdateEnd: (LocalTime) -> Unit
+) {
+    var showStartTimePicker by remember { mutableStateOf(false) }
+    var showEndTimePicker by remember { mutableStateOf(false) }
+    val timeFormatter = DateTimeFormatter.ofPattern("h:mm a")
+
+    if (showStartTimePicker) {
+        SimpleTimePickerDialog(
+            title = "Select quiet hours start",
+            currentTime = start,
+            onDismissRequest = { showStartTimePicker = false },
+            onTimeSelected = {
+                onUpdateStart(it)
+                showStartTimePicker = false
+            }
+        )
+    }
+
+    if (showEndTimePicker) {
+        SimpleTimePickerDialog(
+            title = "Select quiet hours end",
+            currentTime = end,
+            onDismissRequest = { showEndTimePicker = false },
+            onTimeSelected = {
+                onUpdateEnd(it)
+                showEndTimePicker = false
+            }
+        )
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        OutlinedTextField(
+            value = start.format(timeFormatter),
+            onValueChange = {},
+            label = { Text("Start") },
+            readOnly = true,
+            trailingIcon = {
+                androidx.compose.material3.IconButton(onClick = { showStartTimePicker = true }) {
+                    androidx.compose.material3.Icon(Icons.Default.Schedule, contentDescription = "Select start time")
+                }
+            },
+            modifier = Modifier.weight(1f)
+        )
+        OutlinedTextField(
+            value = end.format(timeFormatter),
+            onValueChange = {},
+            label = { Text("End") },
+            readOnly = true,
+            trailingIcon = {
+                androidx.compose.material3.IconButton(onClick = { showEndTimePicker = true }) {
+                    androidx.compose.material3.Icon(Icons.Default.Schedule, contentDescription = "Select end time")
+                }
+            },
+            modifier = Modifier.weight(1f)
+        )
+    }
+
+    Text(
+        text = "Notifications will stay quiet between these times.",
+        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -292,7 +281,7 @@ private fun NotificationTypeCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        colors = CardDefaults.cardColors(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -304,77 +293,49 @@ private fun NotificationTypeCard(
                 verticalAlignment = Alignment.Top
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = getNotificationTypeDisplayName(preference.type),
-                        style = MaterialTheme.typography.titleSmall
-                    )
+                    Text(text = getNotificationTypeDisplayName(preference.type), style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
                     Text(
                         text = getNotificationTypeDescription(preference.type),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
-                Switch(
-                    checked = preference.enabled,
-                    onCheckedChange = onToggle
-                )
+                Switch(checked = preference.enabled, onCheckedChange = onToggle)
             }
 
             if (preference.enabled) {
                 HorizontalDivider()
-
-                // Priority Selection
-                Text(
-                    text = "Priority",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
                 var priorityExpanded by remember { mutableStateOf(false) }
-
-                ExposedDropdownMenuBox(
-                    expanded = priorityExpanded,
-                    onExpandedChange = { priorityExpanded = it }
-                ) {
-                    OutlinedTextField(
-                        value = preference.priority.name,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Priority") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = priorityExpanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
-                    )
-
-                    ExposedDropdownMenu(
+                Box {
+                    OutlinedButton(
+                        onClick = { priorityExpanded = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Priority: ${preference.priority.name.lowercase().replaceFirstChar(Char::titlecase)}")
+                    }
+                    DropdownMenu(
                         expanded = priorityExpanded,
                         onDismissRequest = { priorityExpanded = false }
                     ) {
-                        // Prefer entries on Kotlin 1.9+, fallback to values()
-                        (NotificationPriority::class.java.enumConstants?.toList()
-                            ?: NotificationPriority.values().toList()).forEach { priority ->
+                        NotificationPriority.entries.forEach { priority ->
                             DropdownMenuItem(
-                                text = { Text(priority.name) },
+                                text = { Text(priority.name.lowercase().replaceFirstChar(Char::titlecase)) },
                                 onClick = {
                                     onUpdatePriority(priority)
                                     priorityExpanded = false
-                                },
-                                contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                                }
                             )
                         }
                     }
                 }
 
-                // Schedule Info
                 if (preference.scheduleConfig.intervalHours > 0) {
                     Text(
-                        text = "Interval: Every ${preference.scheduleConfig.intervalHours} hours",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "Interval: every ${preference.scheduleConfig.intervalHours} hours",
+                        style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
             }
         }
     }
@@ -382,19 +343,19 @@ private fun NotificationTypeCard(
 
 private fun getNotificationTypeDisplayName(type: NotificationType): String {
     return when (type) {
-        NotificationType.TASK_REMINDER -> "Task Reminders"
-        NotificationType.DUE_SOON_ALERT -> "Due Soon Alerts"
-        NotificationType.OVERDUE_ALERT -> "Overdue Alerts"
-        NotificationType.HIGH_PRIORITY_REMINDER -> "High Priority Reminders"
-        NotificationType.PROJECT_UPDATE -> "Project Updates"
-        NotificationType.ASSIGNMENT_UPDATE -> "Assignment Updates"
-        NotificationType.COMPLETION_CELEBRATION -> "Completion Celebrations"
-        NotificationType.STREAK_REMINDER -> "Streak Reminders"
-        NotificationType.DEADLINE_WARNING -> "Deadline Warnings"
-        NotificationType.WEEKLY_SUMMARY -> "Weekly Summaries"
-        NotificationType.MORNING_BRIEFING -> "Morning Briefings"
-        NotificationType.EVENING_REVIEW -> "Evening Reviews"
-        NotificationType.CHAT_MESSAGE -> "Chat Messages"
+        NotificationType.TASK_REMINDER -> "Task reminders"
+        NotificationType.DUE_SOON_ALERT -> "Due soon alerts"
+        NotificationType.OVERDUE_ALERT -> "Overdue alerts"
+        NotificationType.HIGH_PRIORITY_REMINDER -> "High priority reminders"
+        NotificationType.PROJECT_UPDATE -> "Project updates"
+        NotificationType.ASSIGNMENT_UPDATE -> "Assignment updates"
+        NotificationType.COMPLETION_CELEBRATION -> "Completion celebrations"
+        NotificationType.STREAK_REMINDER -> "Streak reminders"
+        NotificationType.DEADLINE_WARNING -> "Deadline warnings"
+        NotificationType.WEEKLY_SUMMARY -> "Weekly summaries"
+        NotificationType.MORNING_BRIEFING -> "Morning briefings"
+        NotificationType.EVENING_REVIEW -> "Evening reviews"
+        NotificationType.CHAT_MESSAGE -> "Chat messages"
     }
 }
 
@@ -424,7 +385,6 @@ private fun SimpleTimePickerDialog(
     onDismissRequest: () -> Unit,
     onTimeSelected: (LocalTime) -> Unit
 ) {
-    // Common time options for quiet hours - focused on evening/bedtime to morning/wake up
     val timeOptions = listOf(
         "8:00 PM" to LocalTime.of(20, 0),
         "8:30 PM" to LocalTime.of(20, 30),
@@ -470,36 +430,26 @@ private fun SimpleTimePickerDialog(
                     .padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Title
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Text(text = title, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
 
-                // Current selection preview
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
+                    colors = CardDefaults.cardColors(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
                             text = "Selected: ${selectedTime.format(DateTimeFormatter.ofPattern("h:mm a"))}",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
 
-                // Time options grid
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -509,50 +459,31 @@ private fun SimpleTimePickerDialog(
                             onClick = { selectedTime = time },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = if (selectedTime == time)
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else
-                                    MaterialTheme.colorScheme.surface
+                                containerColor = if (selectedTime == time) {
+                                    androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    androidx.compose.material3.MaterialTheme.colorScheme.surface
+                                }
                             ),
                             border = BorderStroke(
-                                width = 1.dp,
-                                color = if (selectedTime == time)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.outline
+                                1.dp,
+                                if (selectedTime == time) androidx.compose.material3.MaterialTheme.colorScheme.primary else androidx.compose.material3.MaterialTheme.colorScheme.outline
                             )
                         ) {
-                            Text(
-                                text = displayText,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = if (selectedTime == time)
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                else
-                                    MaterialTheme.colorScheme.onSurface
-                            )
+                            Text(text = displayText)
                         }
                     }
                 }
 
-                // Action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = onDismissRequest,
-                        modifier = Modifier.weight(1f)
-                    ) {
+                    OutlinedButton(onClick = onDismissRequest, modifier = Modifier.weight(1f)) {
                         Text("Cancel")
                     }
-
-                    Button(
-                        onClick = {
-                            onTimeSelected(selectedTime)
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Set Time")
+                    Button(onClick = { onTimeSelected(selectedTime) }, modifier = Modifier.weight(1f)) {
+                        Text("Set time")
                     }
                 }
             }

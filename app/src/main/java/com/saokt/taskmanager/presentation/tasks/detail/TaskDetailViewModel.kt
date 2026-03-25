@@ -1,5 +1,6 @@
 package com.saokt.taskmanager.presentation.tasks.detail
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.saokt.taskmanager.domain.model.Priority
@@ -7,6 +8,9 @@ import com.saokt.taskmanager.domain.model.Project
 import com.saokt.taskmanager.domain.model.ProjectMember
 import com.saokt.taskmanager.domain.model.Subtask
 import com.saokt.taskmanager.domain.model.Task
+import com.saokt.taskmanager.domain.model.TaskStatus
+import com.saokt.taskmanager.domain.model.TaskType
+import com.saokt.taskmanager.domain.model.canonicalized
 import com.saokt.taskmanager.domain.usecase.project.GetProjectByIdUseCase
 import com.saokt.taskmanager.domain.usecase.project.GetProjectMembersUseCase
 import com.saokt.taskmanager.domain.usecase.project.GetProjectsUseCase
@@ -25,7 +29,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.Date
 import javax.inject.Inject
-import android.util.Log
 
 @HiltViewModel
 class TaskDetailViewModel @Inject constructor(
@@ -83,6 +86,7 @@ class TaskDetailViewModel @Inject constructor(
                     title = "",
                     description = "",
                     priority = Priority.MEDIUM,
+                    type = TaskType.TASK,
                     dueDate = null,
                     projectId = initialProjectId
                 ),
@@ -99,23 +103,15 @@ class TaskDetailViewModel @Inject constructor(
         taskLoadJob = viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
 
-            // Debug: log identity and incoming id (one-shot)
-            val debugUser = try {
-                getCurrentUserUseCase().first()
-            } catch (_: Exception) { null }
-            Log.d("TaskAccessDebug", "loadTask: uid=${debugUser?.id}, taskId=$taskId")
-
             getTaskByIdUseCase(taskId)
                 .catch { e ->
                     _state.value = _state.value.copy(
                         isLoading = false,
                         error = e.localizedMessage ?: "Unknown error occurred"
                     )
-                    Log.e("TaskAccessDebug", "loadTask: error while collecting task id=$taskId: ${e.localizedMessage}")
                 }
                 .collect { task ->
                     if (task != null) {
-                        Log.d("TaskAccessDebug", "loaded local task: id=${task.id} userId=${task.userId} createdBy=${task.createdBy} assignedTo=${task.assignedTo} projectId=${task.projectId}")
                         _state.value = _state.value.copy(
                             isLoading = false,
                             task = task,
@@ -123,12 +119,10 @@ class TaskDetailViewModel @Inject constructor(
                         )
                         task.projectId?.let(::loadProjectContext)
                     } else {
-                        Log.w("TaskAccessDebug", "local task not found in Room for id=$taskId, trying remote fetch-by-id")
                         try {
                             val res = getTaskByIdRemoteUseCase(taskId)
                             if (res.isSuccess && res.getOrNull() != null) {
                                 val fetched = res.getOrNull()!!
-                                Log.d("TaskAccessDebug", "remote fetched task: id=${fetched.id}")
                                 _state.value = _state.value.copy(
                                     isLoading = false,
                                     task = fetched,
@@ -136,11 +130,9 @@ class TaskDetailViewModel @Inject constructor(
                                 )
                                 fetched.projectId?.let(::loadProjectContext)
                             } else {
-                                Log.w("TaskAccessDebug", "remote fetch failed: ${res.exceptionOrNull()?.message}")
                                 _state.value = _state.value.copy(isLoading = false, error = "Task not found")
                             }
                         } catch (e: Exception) {
-                            Log.e("TaskAccessDebug", "remote fetch exception", e)
                             _state.value = _state.value.copy(isLoading = false, error = "Task not found")
                         }
                     }
@@ -149,7 +141,6 @@ class TaskDetailViewModel @Inject constructor(
     }
 
     private fun loadProjectContext(projectId: String) {
-        Log.d("TaskCreationDebug", "ViewModel: loadProjectMembers called for $projectId")
         projectContextJob?.cancel()
         projectContextJob = viewModelScope.launch {
             try {
@@ -168,7 +159,6 @@ class TaskDetailViewModel @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
-                Log.e("TaskCreationDebug", "ViewModel: Error loading project members", e)
                 _state.value = _state.value.copy(
                     error = "Failed to load project members: ${e.message}"
                 )
@@ -193,7 +183,14 @@ class TaskDetailViewModel @Inject constructor(
     fun updateDueDate(dueDate: Date?) {
         val currentTask = _state.value.task
         _state.value = _state.value.copy(
-            task = currentTask.copy(dueDate = dueDate)
+            task = currentTask.copy(dueDate = dueDate).canonicalized()
+        )
+    }
+
+    fun updateStartDate(startDate: Date?) {
+        val currentTask = _state.value.task
+        _state.value = _state.value.copy(
+            task = currentTask.copy(startDate = startDate).canonicalized()
         )
     }
 
@@ -201,6 +198,23 @@ class TaskDetailViewModel @Inject constructor(
         val currentTask = _state.value.task
         _state.value = _state.value.copy(
             task = currentTask.copy(priority = priority)
+        )
+    }
+
+    fun updateStatus(status: TaskStatus) {
+        val currentTask = _state.value.task
+        _state.value = _state.value.copy(
+            task = currentTask.copy(
+                status = status,
+                completed = status == TaskStatus.DONE
+            ).canonicalized()
+        )
+    }
+
+    fun updateTaskType(type: TaskType) {
+        val currentTask = _state.value.task
+        _state.value = _state.value.copy(
+            task = currentTask.copy(type = type).canonicalized()
         )
     }
 
@@ -221,15 +235,14 @@ class TaskDetailViewModel @Inject constructor(
         }
     }
 
-    fun     updateAssignee(assigneeId: String?) {
+    fun updateAssignee(assigneeId: String?) {
         val currentTask = _state.value.task
         _state.value = _state.value.copy(
-            task = currentTask.copy(assignedTo = assigneeId ,)
+            task = currentTask.copy(assignedTo = assigneeId)
         )
     }
 
     fun assignTask() {
-        Log.d("TaskCreationDebug", "ViewModel: assignTask called with ...")
         val currentTask = _state.value.task
         
         currentTask.assignedTo?.let { assigneeId ->
@@ -300,13 +313,13 @@ class TaskDetailViewModel @Inject constructor(
     }
 
     fun saveTask() {
+        if (_state.value.isSaving) return
         viewModelScope.launch {
             _state.value = _state.value.copy(isSaving = true)
 
             val currentTask = _state.value.task
             
             try {
-                // Get current user to set createdBy
                 val currentUser = getCurrentUserUseCase().first()
                 if (currentUser == null) {
                     _state.value = _state.value.copy(
@@ -315,16 +328,30 @@ class TaskDetailViewModel @Inject constructor(
                     )
                     return@launch
                 }
+
+                val taskWithUser = if (_state.value.isNewTask) {
+                    currentTask.copy(
+                        createdBy = currentTask.createdBy.ifBlank { currentUser.id },
+                        userId = currentTask.userId.ifBlank { currentUser.id },
+                        assignedTo = currentTask.assignedTo
+                    )
+                } else {
+                    currentTask.copy(
+                        createdBy = currentTask.createdBy.ifBlank { currentUser.id },
+                        userId = currentTask.userId.ifBlank { currentUser.id },
+                        assignedTo = currentTask.assignedTo
+                    )
+                }.canonicalized()
                 
-                // Set createdBy and assignedTo fields
-                val taskWithUser = currentTask.copy(
-                    createdBy = currentUser.id,
-                    assignedTo = currentTask.assignedTo // Keep existing assignment or null
-                )
-                
-                Log.d("TaskCreationDebug", "ViewModel: saveTask - currentUser.id: ${currentUser.id}")
-                Log.d("TaskCreationDebug", "ViewModel: saveTask - taskWithUser: $taskWithUser")
-                
+
+                if (taskWithUser.title.isBlank()) {
+                    _state.value = _state.value.copy(
+                        isSaving = false,
+                        error = "Task title cannot be empty"
+                    )
+                    return@launch
+                }
+
                 val result = if (_state.value.isNewTask) {
                     createTaskUseCase(taskWithUser)
                 } else {
@@ -335,6 +362,7 @@ class TaskDetailViewModel @Inject constructor(
                     _state.value = _state.value.copy(
                         isSaving = false,
                         isTaskSaved = true,
+                        task = result.getOrNull() ?: taskWithUser,
                         error = null
                     )
                 } else {
@@ -344,6 +372,7 @@ class TaskDetailViewModel @Inject constructor(
                     )
                 }
             } catch (e: Exception) {
+                Log.e("TaskDetailViewModel", "Failed to save task", e)
                 _state.value = _state.value.copy(
                     isSaving = false,
                     error = e.localizedMessage ?: "Failed to save task"

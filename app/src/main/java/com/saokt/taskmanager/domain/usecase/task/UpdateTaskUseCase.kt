@@ -1,6 +1,7 @@
 package com.saokt.taskmanager.domain.usecase.task
 
 import com.saokt.taskmanager.domain.model.Task
+import com.saokt.taskmanager.domain.model.canonicalized
 import com.saokt.taskmanager.domain.repository.TaskRepository
 import com.saokt.taskmanager.domain.repository.UserRepository
 import kotlinx.coroutines.flow.first
@@ -23,8 +24,8 @@ class UpdateTaskUseCase @Inject constructor(
         val updatedTask = task.copy(
             modifiedAt = Date(),
             assignedBy = if (task.assignedTo != null && task.assignedBy.isNullOrBlank()) currentUser.id else task.assignedBy
-        )
-        
+        ).canonicalized()
+
         return taskRepository.updateTask(updatedTask)
     }
 }

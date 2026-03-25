@@ -36,7 +36,7 @@ android {
         versionCode = 4
         versionName = "1.3"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.saokt.taskmanager.testing.TaskManagerTestRunner"
     }
 
     buildTypes {
@@ -97,6 +97,7 @@ dependencies {
     implementation("com.google.auth:google-auth-library-oauth2-http:1.20.0")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
     implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     implementation("com.valentinilk.shimmer:compose-shimmer:1.0.5")
 

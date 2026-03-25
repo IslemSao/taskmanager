@@ -1,37 +1,32 @@
 package com.saokt.taskmanager.presentation.tasks.detail
 
 import android.app.DatePickerDialog
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -52,15 +47,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.saokt.taskmanager.domain.model.Priority
-import com.saokt.taskmanager.domain.model.ProjectMember
+import com.saokt.taskmanager.domain.model.TaskStatus
+import com.saokt.taskmanager.domain.model.TaskType
+import com.saokt.taskmanager.presentation.components.AppTopBar
+import com.saokt.taskmanager.presentation.components.HeroCard
+import com.saokt.taskmanager.presentation.components.InfoChip
+import com.saokt.taskmanager.presentation.components.SectionCard
+import com.saokt.taskmanager.ui.theme.AppTheme
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.size
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,17 +86,21 @@ fun TaskDetailScreen(
     }
 
     LaunchedEffect(state.isTaskSaved) {
-        if (state.isTaskSaved) {
-            navController.navigateUp()
-        }
+        if (state.isTaskSaved) navController.navigateUp()
     }
-    
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { padding ->
-        if (state.isLoading) {
-            Box(
+
+    if (state.isLoading) {
+        Scaffold(
+            topBar = {
+                AppTopBar(
+                    title = if (state.isNewTask) "New task" else "Edit task",
+                    subtitle = "Organize the task details, assignment, and schedule",
+                    onBack = { navController.navigateUp() }
+                )
+            },
+            snackbarHost = { SnackbarHost(snackbarHostState) }
+        ) { padding ->
+            androidx.compose.foundation.layout.Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
@@ -104,431 +108,326 @@ fun TaskDetailScreen(
             ) {
                 CircularProgressIndicator()
             }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                // Back button and title row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { navController.navigateUp() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                        Text(
-                            if (state.isNewTask) "New Task" else "Edit Task",
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(start = 2.dp)
-                        )
+        }
+        return
+    }
+
+    var newSubtaskTitle by remember { mutableStateOf("") }
+
+    fun saveTaskWithPendingSubtask() {
+        if (newSubtaskTitle.isNotBlank()) {
+            viewModel.addSubtask(newSubtaskTitle)
+            newSubtaskTitle = ""
+        }
+        viewModel.saveTask()
+    }
+
+    Scaffold(
+        topBar = {
+            AppTopBar(
+                title = if (state.isNewTask) "New task" else "Edit task",
+                subtitle = "Set status, ownership, and schedule with less friction",
+                onBack = { navController.navigateUp() },
+                actions = {
+                    IconButton(
+                        onClick = { saveTaskWithPendingSubtask() },
+                        enabled = !state.isSaving && state.task.title.isNotBlank(),
+                        modifier = Modifier.testTag(TaskDetailTestTags.TOP_SAVE_BUTTON)
+                    ) {
+                        Icon(Icons.Default.Done, contentDescription = "Save")
                     }
-                    if (!state.isLoading && !state.isSaving) {
-                        IconButton(
-                            onClick = { viewModel.saveTask() },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.Default.Done, contentDescription = "Save")
-                        }
-                        // Open chat for this task (participants: assignee, creator, owner)
-                        IconButton(
-                            onClick = {
-                                val task = state.task
-                                val projectId = task.projectId
-                                if (projectId != null) {
-                                    val assigneeId = task.assignedTo
-                                    val creatorId = task.createdBy
-                                    val ownerId = state.availableProjects.find { it.id == projectId }?.ownerId
-                                    val currentUserId = state.currentUser?.id ?: ""
-                                    val participants = listOfNotNull(assigneeId, creatorId, ownerId, currentUserId).distinct()
-                                    if (participants.isNotEmpty()) {
-                                        val csv = participants.joinToString(",")
-                                        navController.navigate(
-                                            com.saokt.taskmanager.presentation.navigation.Screen.Chat.createRoute(
-                                                projectId = projectId,
-                                                taskId = task.id,
-                                                participantsCsv = csv,
-                                                currentUserId = currentUserId
-                                            )
+                    IconButton(
+                        onClick = {
+                            val task = state.task
+                            val projectId = task.projectId
+                            if (projectId != null) {
+                                val assigneeId = task.assignedTo
+                                val creatorId = task.createdBy
+                                val ownerId = state.availableProjects.find { it.id == projectId }?.ownerId
+                                val currentUserId = state.currentUser?.id ?: ""
+                                val participants = listOfNotNull(assigneeId, creatorId, ownerId, currentUserId).distinct()
+                                if (participants.isNotEmpty()) {
+                                    val csv = participants.joinToString(",")
+                                    navController.navigate(
+                                        com.saokt.taskmanager.presentation.navigation.Screen.Chat.createRoute(
+                                            projectId = projectId,
+                                            taskId = task.id,
+                                            participantsCsv = csv,
+                                            currentUserId = currentUserId
                                         )
-                                    }
+                                    )
                                 }
-                            },
-                            colors = IconButtonDefaults.iconButtonColors(
-                                contentColor = MaterialTheme.colorScheme.primary
-                            ),
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Open Chat")
+                            }
                         }
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Open chat")
                     }
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Title field
-                OutlinedTextField(
-                    value = state.task.title,
-                    onValueChange = { viewModel.updateTitle(it) },
-                    label = { Text("Task Title") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.medium
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(
+                start = AppTheme.screenPadding,
+                end = AppTheme.screenPadding,
+                top = 8.dp,
+                bottom = 40.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.sectionSpacing)
+        ) {
+            item {
+                HeroCard(
+                    eyebrow = "Task editor",
+                    title = if (state.task.title.isBlank()) "Untitled task" else state.task.title,
+                    body = "Group task details into clear sections so it is easier to plan, assign, and follow up.",
+                    stats = listOf(
+                        "Status" to state.task.status.displayName(),
+                        "Priority" to state.task.priority.name.lowercase().replaceFirstChar(Char::titlecase)
+                    )
                 )
+            }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Description field
-                OutlinedTextField(
-                    value = state.task.description,
-                    onValueChange = { viewModel.updateDescription(it) },
-                    label = { Text("Description") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 4,
-                    shape = MaterialTheme.shapes.medium
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Priority selector
-                Text(
-                    text = "Priority Level",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    Priority.values().forEach { priority ->
-                        SegmentedButton(
-                            selected = state.task.priority == priority,
-                            onClick = { viewModel.updatePriority(priority) },
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index = priority.ordinal,
-                                count = Priority.values().size
-                            ),
-                            colors = SegmentedButtonDefaults.colors(
-                                activeContainerColor = when (priority) {
-                                    Priority.HIGH -> MaterialTheme.colorScheme.errorContainer
-                                    Priority.MEDIUM -> MaterialTheme.colorScheme.tertiaryContainer
-                                    Priority.LOW -> MaterialTheme.colorScheme.primaryContainer
-                                },
-                                activeContentColor = when (priority) {
-                                    Priority.HIGH -> MaterialTheme.colorScheme.onErrorContainer
-                                    Priority.MEDIUM -> MaterialTheme.colorScheme.onTertiaryContainer
-                                    Priority.LOW -> MaterialTheme.colorScheme.onPrimaryContainer
-                                }
-                            )
-                        ) {
-                            Text(priority.name)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Project selector
-                Text(
-                    text = "Assign to Project",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                var isProjectDropdownExpanded by remember { mutableStateOf(false) }
-
-                ExposedDropdownMenuBox(
-                    expanded = isProjectDropdownExpanded,
-                    onExpandedChange = { isProjectDropdownExpanded = it },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+            item {
+                SectionCard(title = "Basics") {
                     OutlinedTextField(
-                        value = state.availableProjects.find { it.id == state.task.projectId }?.title ?: "No Project",
-                        onValueChange = { },
-                        readOnly = true,
-                        label = { Text("Project") },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = isProjectDropdownExpanded)
-                        },
-                        shape = MaterialTheme.shapes.medium,
+                        value = state.task.title,
+                        onValueChange = viewModel::updateTitle,
+                        label = { Text("Task title") },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .menuAnchor()
+                            .testTag(TaskDetailTestTags.TITLE_FIELD)
                     )
+                    OutlinedTextField(
+                        value = state.task.description,
+                        onValueChange = viewModel::updateDescription,
+                        label = { Text("Description") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(TaskDetailTestTags.DESCRIPTION_FIELD),
+                        minLines = 4
+                    )
+                }
+            }
 
-                    ExposedDropdownMenu(
-                        expanded = isProjectDropdownExpanded,
-                        onDismissRequest = { isProjectDropdownExpanded = false }
-                    ) {
-                        // Add "No Project" option
-                        DropdownMenuItem(
-                            text = { 
-                                Text(
-                                    "No Project",
-                                    style = MaterialTheme.typography.bodyLarge
-                                ) 
-                            },
-                            onClick = {
-                                viewModel.updateProject(null)
-                                isProjectDropdownExpanded = false
+            item {
+                SectionCard(title = "Workflow") {
+                    Text("Status", style = MaterialTheme.typography.titleSmall)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        TaskStatus.entries.forEachIndexed { index, status ->
+                            SegmentedButton(
+                                selected = state.task.status == status,
+                                onClick = { viewModel.updateStatus(status) },
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = TaskStatus.entries.size)
+                            ) {
+                                Text(status.displayName())
                             }
-                        )
+                        }
+                    }
 
-                        // Add project options
-                        state.availableProjects.forEach { project ->
+                    Text("Type", style = MaterialTheme.typography.titleSmall)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        TaskType.entries.forEachIndexed { index, type ->
+                            SegmentedButton(
+                                selected = state.task.type == type,
+                                onClick = { viewModel.updateTaskType(type) },
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = TaskType.entries.size)
+                            ) {
+                                Text(if (type == TaskType.TASK) "Task" else "Milestone")
+                            }
+                        }
+                    }
+
+                    Text("Priority", style = MaterialTheme.typography.titleSmall)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        Priority.entries.forEach { priority ->
+                            SegmentedButton(
+                                selected = state.task.priority == priority,
+                                onClick = { viewModel.updatePriority(priority) },
+                                shape = SegmentedButtonDefaults.itemShape(index = priority.ordinal, count = Priority.entries.size),
+                                modifier = Modifier.testTag(
+                                    when (priority) {
+                                        Priority.LOW -> TaskDetailTestTags.PRIORITY_LOW
+                                        Priority.MEDIUM -> TaskDetailTestTags.PRIORITY_MEDIUM
+                                        Priority.HIGH -> TaskDetailTestTags.PRIORITY_HIGH
+                                    }
+                                )
+                            ) {
+                                Text(priority.name.lowercase().replaceFirstChar(Char::titlecase))
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                SectionCard(title = "Project and assignment") {
+                    var isProjectDropdownExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        OutlinedButton(
+                            onClick = { isProjectDropdownExpanded = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag(TaskDetailTestTags.PROJECT_DROPDOWN)
+                        ) {
+                            Text(state.availableProjects.find { it.id == state.task.projectId }?.title ?: "No project")
+                        }
+                        DropdownMenu(
+                            expanded = isProjectDropdownExpanded,
+                            onDismissRequest = { isProjectDropdownExpanded = false }
+                        ) {
                             DropdownMenuItem(
-                                text = { 
-                                    Text(
-                                        project.title,
-                                        style = MaterialTheme.typography.bodyLarge
-                                    ) 
-                                },
+                                text = { Text("No project") },
                                 onClick = {
-                                    viewModel.updateProject(project.id)
+                                    viewModel.updateProject(null)
                                     isProjectDropdownExpanded = false
                                 }
                             )
-                        }
-                    }
-                }
-
-                // Task Assignment Section - Only show if project is selected and user is project owner
-                if (state.task.projectId != null && state.isProjectOwner) {
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = "Assign Task",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    var isAssigneeDropdownExpanded by remember { mutableStateOf(false) }
-
-                    ExposedDropdownMenuBox(
-                        expanded = isAssigneeDropdownExpanded,
-                        onExpandedChange = { isAssigneeDropdownExpanded = it },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        OutlinedTextField(
-                            value = state.projectMembers.find { it.userId == state.task.assignedTo }?.displayName ?: "Unassigned",
-                            onValueChange = { },
-                            readOnly = true,
-                            label = { Text("Assign to") },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Default.Person,
-                                    contentDescription = "Assignee",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = isAssigneeDropdownExpanded)
-                            },
-                            shape = MaterialTheme.shapes.medium,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor()
-                        )
-
-                        ExposedDropdownMenu(
-                            expanded = isAssigneeDropdownExpanded,
-                            onDismissRequest = { isAssigneeDropdownExpanded = false }
-                        ) {
-                            // Add "Unassigned" option
-                            DropdownMenuItem(
-                                text = { 
-                                    Text(
-                                        "Unassigned",
-                                        style = MaterialTheme.typography.bodyLarge
-                                    ) 
-                                },
-                                onClick = {
-                                    viewModel.updateAssignee(null)
-                                    isAssigneeDropdownExpanded = false
-                                }
-                            )
-
-                            // Add project member options
-                            state.projectMembers.forEach { member ->
+                            state.availableProjects.forEach { project ->
                                 DropdownMenuItem(
-                                    text = { 
-                                        Text(
-                                            member.displayName,
-                                            style = MaterialTheme.typography.bodyLarge
-                                        ) 
-                                    },
+                                    text = { Text(project.title) },
                                     onClick = {
-                                        viewModel.updateAssignee(member.userId)
-                                        isAssigneeDropdownExpanded = false
+                                        viewModel.updateProject(project.id)
+                                        isProjectDropdownExpanded = false
                                     }
                                 )
                             }
                         }
                     }
 
-                    // Show current assignee info
+                    if (state.task.projectId != null && state.isProjectOwner) {
+                        var isAssigneeDropdownExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { isAssigneeDropdownExpanded = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Person, contentDescription = null)
+                                androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+                                Text(state.projectMembers.find { it.userId == state.task.assignedTo }?.displayName ?: "Unassigned")
+                            }
+                            DropdownMenu(
+                                expanded = isAssigneeDropdownExpanded,
+                                onDismissRequest = { isAssigneeDropdownExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Unassigned") },
+                                    onClick = {
+                                        viewModel.updateAssignee(null)
+                                        isAssigneeDropdownExpanded = false
+                                    }
+                                )
+                                state.projectMembers.forEach { member ->
+                                    DropdownMenuItem(
+                                        text = { Text(member.displayName) },
+                                        onClick = {
+                                            viewModel.updateAssignee(member.userId)
+                                            isAssigneeDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     state.task.assignedTo?.let { assigneeId ->
-                        val assignee = state.projectMembers.find { it.userId == assigneeId }
-                        assignee?.let {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Currently assigned to: ${it.displayName}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                        state.projectMembers.find { it.userId == assigneeId }?.let {
+                            InfoChip(label = "Assigned to ${it.displayName}")
                         }
                     }
                 }
+            }
 
-                // Show assignment info for non-owners
-                if (state.task.projectId != null && !state.isProjectOwner && state.task.assignedTo != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    val assignee = state.projectMembers.find { it.userId == state.task.assignedTo }
-                    assignee?.let {
-                        Text(
-                            text = "Assigned to: ${it.displayName}",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Due date picker
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Due Date",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f)
+            item {
+                SectionCard(title = "Schedule") {
+                    DateFieldRow(
+                        label = "Start date",
+                        date = state.task.startDate,
+                        buttonTag = TaskDetailTestTags.START_DATE_BUTTON,
+                        context = context,
+                        onDateSelected = viewModel::updateStartDate
                     )
-
-                    OutlinedButton(
-                        onClick = {
-                            val calendar = Calendar.getInstance()
-                            state.task.dueDate?.let { calendar.time = it }
-
-                            DatePickerDialog(
-                                context,
-                                { _, year, month, dayOfMonth ->
-                                    calendar.set(year, month, dayOfMonth)
-                                    viewModel.updateDueDate(calendar.time)
-                                },
-                                calendar.get(Calendar.YEAR),
-                                calendar.get(Calendar.MONTH),
-                                calendar.get(Calendar.DAY_OF_MONTH)
-                            ).show()
-                        },
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Icon(
-                            Icons.Default.DateRange, 
-                            contentDescription = "Select Date",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            state.task.dueDate?.let {
-                                SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(it)
-                            } ?: "Set Due Date",
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
+                    DateFieldRow(
+                        label = if (state.task.type == TaskType.MILESTONE) "Milestone date" else "Due date",
+                        date = state.task.dueDate,
+                        buttonTag = TaskDetailTestTags.DUE_DATE_BUTTON,
+                        context = context,
+                        onDateSelected = viewModel::updateDueDate
+                    )
                 }
+            }
 
-                Spacer(modifier = Modifier.height(16.dp))
+            item {
+                SectionCard(title = "Subtasks") {
+                    if (state.task.subtasks.isEmpty()) {
+                        Text(
+                            text = "Break the task into smaller steps to make progress easier to track.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            state.task.subtasks.forEach { subtask ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = subtask.isCompleted,
+                                        onCheckedChange = { viewModel.toggleSubtaskCompletion(subtask.id) }
+                                    )
+                                    Text(
+                                        text = subtask.title,
+                                        modifier = Modifier.weight(1f),
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    IconButton(onClick = { viewModel.removeSubtask(subtask.id) }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete subtask")
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-                // Subtasks
-                Text(
-                    text = "Subtasks",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Column {
-                    state.task.subtasks.forEach { subtask ->
-                        Row(
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = newSubtaskTitle,
+                            onValueChange = { newSubtaskTitle = it },
+                            label = { Text("New subtask") },
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .weight(1f)
+                                .testTag(TaskDetailTestTags.NEW_SUBTASK_FIELD)
+                        )
+                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+                        Button(
+                            onClick = {
+                                if (newSubtaskTitle.isNotBlank()) {
+                                    viewModel.addSubtask(newSubtaskTitle)
+                                    newSubtaskTitle = ""
+                                }
+                            },
+                            modifier = Modifier.testTag(TaskDetailTestTags.ADD_SUBTASK_BUTTON)
                         ) {
-                            Checkbox(
-                                checked = subtask.isCompleted,
-                                onCheckedChange = { viewModel.toggleSubtaskCompletion(subtask.id) }
-                            )
-
-                            Text(
-                                text = subtask.title,
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-
-                            IconButton(onClick = { viewModel.removeSubtask(subtask.id) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete")
-                            }
+                            Text("Add")
                         }
                     }
                 }
+            }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Add subtask
-                var newSubtaskTitle by remember { mutableStateOf("") }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = newSubtaskTitle,
-                        onValueChange = { newSubtaskTitle = it },
-                        label = { Text("New Subtask") },
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Button(
-                        onClick = {
-                            if (newSubtaskTitle.isNotBlank()) {
-                                viewModel.addSubtask(newSubtaskTitle)
-                                newSubtaskTitle = ""
-                            }
-                        }
-                    ) {
-                        Text("Add")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Save button
+            item {
                 Button(
-                    onClick = { viewModel.saveTask() },
-                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { saveTaskWithPendingSubtask() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .testTag(TaskDetailTestTags.SAVE_BUTTON),
                     enabled = !state.isSaving && state.task.title.isNotBlank()
                 ) {
-                    Text(if (state.isSaving) "Saving..." else "Save Task")
+                    Text(if (state.isSaving) "Saving..." else "Save task")
                 }
             }
         }
@@ -547,4 +446,70 @@ fun Checkbox(
             tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
         )
     }
+}
+
+object TaskDetailTestTags {
+    const val TITLE_FIELD = "task_detail_title_field"
+    const val DESCRIPTION_FIELD = "task_detail_description_field"
+    const val START_DATE_BUTTON = "task_detail_start_date_button"
+    const val DUE_DATE_BUTTON = "task_detail_due_date_button"
+    const val PRIORITY_LOW = "task_detail_priority_low"
+    const val PRIORITY_MEDIUM = "task_detail_priority_medium"
+    const val PRIORITY_HIGH = "task_detail_priority_high"
+    const val PROJECT_DROPDOWN = "task_detail_project_dropdown"
+    const val NEW_SUBTASK_FIELD = "task_detail_new_subtask_field"
+    const val ADD_SUBTASK_BUTTON = "task_detail_add_subtask_button"
+    const val SAVE_BUTTON = "task_detail_save_button"
+    const val TOP_SAVE_BUTTON = "task_detail_top_save_button"
+}
+
+@Composable
+private fun DateFieldRow(
+    label: String,
+    date: java.util.Date?,
+    buttonTag: String,
+    context: android.content.Context,
+    onDateSelected: (java.util.Date?) -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Text(text = label, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = date?.let { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(it) } ?: "Not set",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        OutlinedButton(
+            onClick = {
+                val calendar = Calendar.getInstance()
+                date?.let { calendar.time = it }
+                DatePickerDialog(
+                    context,
+                    { _, year, month, dayOfMonth ->
+                        calendar.set(year, month, dayOfMonth)
+                        onDateSelected(calendar.time)
+                    },
+                    calendar.get(Calendar.YEAR),
+                    calendar.get(Calendar.MONTH),
+                    calendar.get(Calendar.DAY_OF_MONTH)
+                ).show()
+            },
+            modifier = Modifier.testTag(buttonTag)
+        ) {
+            Icon(Icons.Default.DateRange, contentDescription = "Select date")
+            androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+            Text("Choose")
+        }
+    }
+}
+
+private fun TaskStatus.displayName(): String = when (this) {
+    TaskStatus.TODO -> "Todo"
+    TaskStatus.IN_PROGRESS -> "In progress"
+    TaskStatus.DONE -> "Done"
 }

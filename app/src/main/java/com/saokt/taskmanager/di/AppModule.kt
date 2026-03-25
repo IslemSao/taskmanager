@@ -10,6 +10,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.saokt.taskmanager.data.util.FirebaseEmulatorSettings
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -35,6 +36,28 @@ object AppModule {
         }
     }
 
+    private val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                "ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'TODO'"
+            )
+            database.execSQL(
+                "UPDATE tasks SET status = CASE WHEN completed = 1 THEN 'DONE' ELSE 'TODO' END"
+            )
+        }
+    }
+
+    private val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL(
+                "ALTER TABLE tasks ADD COLUMN startDate INTEGER"
+            )
+            database.execSQL(
+                "ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'TASK'"
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideTaskManagerDatabase(@ApplicationContext context: Context): TaskManagerDatabase {
@@ -44,6 +67,8 @@ object AppModule {
             "task_manager_db"
         )
             .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_2_3)
+            .addMigrations(MIGRATION_3_4)
             .build()
     }
 
@@ -63,14 +88,26 @@ object AppModule {
     @Singleton
     fun provideFirebaseAuth(@ApplicationContext context: Context): FirebaseAuth {
         val firebaseApp = ensureFirebaseApp(context)
-        return FirebaseAuth.getInstance(firebaseApp)
+        return FirebaseAuth.getInstance(firebaseApp).also { auth ->
+            FirebaseEmulatorSettings.configureIfNeeded(
+                firebaseApp = firebaseApp,
+                auth = auth,
+                firestore = FirebaseFirestore.getInstance(firebaseApp)
+            )
+        }
     }
 
     @Provides
     @Singleton
     fun provideFirebaseFirestore(@ApplicationContext context: Context): FirebaseFirestore {
         val firebaseApp = ensureFirebaseApp(context)
-        return FirebaseFirestore.getInstance(firebaseApp)
+        return FirebaseFirestore.getInstance(firebaseApp).also { firestore ->
+            FirebaseEmulatorSettings.configureIfNeeded(
+                firebaseApp = firebaseApp,
+                auth = FirebaseAuth.getInstance(firebaseApp),
+                firestore = firestore
+            )
+        }
     }
 
 
@@ -91,7 +128,14 @@ object AppModule {
         val options = FirebaseOptions.Builder()
             .setApplicationId(getStringResource(context, "google_app_id") ?: FALLBACK_APP_ID)
             .setApiKey(getStringResource(context, "google_api_key") ?: FALLBACK_API_KEY)
-            .setProjectId(getStringResource(context, "project_id") ?: FALLBACK_PROJECT_ID)
+            .setProjectId(
+                getStringResource(context, "project_id")
+                    ?: if (FirebaseEmulatorSettings.isEnabled()) {
+                        FirebaseEmulatorSettings.emulatorProjectId()
+                    } else {
+                        FALLBACK_PROJECT_ID
+                    }
+            )
             .setGcmSenderId(getStringResource(context, "gcm_defaultSenderId") ?: FALLBACK_SENDER_ID)
             .setStorageBucket(getStringResource(context, "google_storage_bucket") ?: FALLBACK_STORAGE_BUCKET)
             .build()

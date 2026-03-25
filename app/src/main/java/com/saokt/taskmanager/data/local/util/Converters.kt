@@ -4,6 +4,8 @@ import androidx.room.TypeConverter
 import com.saokt.taskmanager.domain.model.Priority
 import com.saokt.taskmanager.domain.model.SyncStatus
 import com.saokt.taskmanager.domain.model.Subtask
+import com.saokt.taskmanager.domain.model.TaskStatus
+import com.saokt.taskmanager.domain.model.TaskType
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.util.Date
@@ -61,5 +63,25 @@ class Converters {
     @TypeConverter
     fun toSyncStatus(value: String): SyncStatus {
         return SyncStatus.valueOf(value)
+    }
+
+    @TypeConverter
+    fun fromTaskStatus(status: TaskStatus): String {
+        return status.name
+    }
+
+    @TypeConverter
+    fun toTaskStatus(value: String): TaskStatus {
+        return TaskStatus.valueOf(value)
+    }
+
+    @TypeConverter
+    fun fromTaskType(type: TaskType): String {
+        return type.name
+    }
+
+    @TypeConverter
+    fun toTaskType(value: String): TaskType {
+        return TaskType.valueOf(value)
     }
 }

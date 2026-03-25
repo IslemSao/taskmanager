@@ -1,10 +1,8 @@
 package com.saokt.taskmanager.presentation.dashboard
 
-import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.saokt.taskmanager.MainApplication
 import com.saokt.taskmanager.data.remote.dto.ProjectDto
 import com.saokt.taskmanager.data.remote.dto.ProjectInvitationDto
 import com.saokt.taskmanager.data.remote.dto.ProjectMemberDto
@@ -21,25 +19,26 @@ import com.saokt.taskmanager.domain.usecase.sync.SyncRemoteMembersToLocalUseCase
 import com.saokt.taskmanager.domain.usecase.sync.SyncRemoteProjectsToLocalUseCase
 import com.saokt.taskmanager.domain.usecase.sync.SyncRemoteTasksToLocalUseCase
 import com.saokt.taskmanager.domain.usecase.task.GetTasksUseCase
-import com.saokt.taskmanager.domain.usecase.task.ToggleTaskComplitionUseCase
+import com.saokt.taskmanager.domain.usecase.task.ToggleTaskCompletionUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import java.util.concurrent.atomic.AtomicBoolean // For thread-safe boolean check
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
 
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val getLocalTasksUseCase: GetTasksUseCase,
     private val getLocalProjectsUseCase: GetProjectsUseCase,
-    private val toggleTaskComplitionUseCase: ToggleTaskComplitionUseCase,
+    private val toggleTaskCompletionUseCase: ToggleTaskCompletionUseCase,
     private val signOutUseCase: SignOutUseCase,
     private val getCurrentUserUseCase: GetCurrentUserUseCase,
     private val listenToRemoteProjectsUseCase: ListenToRemoteProjectsUseCase,
@@ -48,8 +47,7 @@ class DashboardViewModel @Inject constructor(
     private val syncRemoteProjectsToLocalUseCase: SyncRemoteProjectsToLocalUseCase,
     private val syncRemoteMembersToLocalUseCase: SyncRemoteMembersToLocalUseCase,
     private val syncRemoteTasksToLocalUseCase: SyncRemoteTasksToLocalUseCase,
-    private val syncRemoteInvitationsToLocalUseCase: SyncRemoteInvitationsToLocalUseCase,
-    private val application: Application
+    private val syncRemoteInvitationsToLocalUseCase: SyncRemoteInvitationsToLocalUseCase
 ) : ViewModel() {
 
     // --- State Management Refined ---
@@ -110,8 +108,8 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun toggleTaskCompletion(task: Task) {
-        (application as MainApplication).applicationScope.launch {
-            val result = toggleTaskComplitionUseCase(task)
+        viewModelScope.launch {
+            val result = toggleTaskCompletionUseCase(task)
             if (result.isFailure) {
                 Log.e("DashboardVM", "Failed to toggle task completion", result.exceptionOrNull())
                 _error.value =
@@ -122,12 +120,12 @@ class DashboardViewModel @Inject constructor(
 
 
     private fun observeAuthenticationAndTriggerSync() {
-        (application as MainApplication).applicationScope.launch {
+        viewModelScope.launch {
             getCurrentUserUseCase()
                 .distinctUntilChanged() // Prevent reacting to the same user object emission
                 .collect { user ->
                     // Cancel previous listener job AND reset sync flags when auth changes
-                    listenerSyncJob?.cancel("User auth state changed / restarting listeners")
+                    listenerSyncJob?.cancel(CancellationException("User auth state changed / restarting listeners"))
                     resetInitialSyncFlags() // Reset flags for the new state
 
                     if (user != null) {
@@ -157,7 +155,7 @@ class DashboardViewModel @Inject constructor(
         _error.value = null
         Log.d("DashboardVM", "launchFirestoreListeners: Starting new listener job.")
 
-        return (application as MainApplication).applicationScope.launch {
+        return viewModelScope.launch {
             try {
                 // Launch separate coroutines for each listener
                 val projectsJob = launch {
@@ -248,37 +246,30 @@ class DashboardViewModel @Inject constructor(
     }
     
     private suspend fun processDataInOrder() {
-        (application as MainApplication).applicationScope.launch {
-            // Only process if we have received projects (required for foreign key relationships)
-            val projects = latestProjects.value ?: return@launch
-            val members = latestMembers.value ?: return@launch
-            
-            // First sync projects (they don't depend on anything else)
-            Log.d("DashboardVM", "Processing ${projects.size} projects")
-            syncRemoteProjectsToLocalUseCase(projects)
-            initialProjectsReceived.set(true)
-            
-            // Then sync members (depends on projects)
-            Log.d("DashboardVM", "Processing ${members.size} members")
-            syncRemoteMembersToLocalUseCase(members)
-            
-            // Then sync tasks if available (depends on projects)
-            latestTasks.value?.let { tasks ->
-                Log.d("DashboardVM", "Processing ${tasks.size} tasks")
-                syncRemoteTasksToLocalUseCase(tasks)
-                initialTasksReceived.set(true)
-            }
-            
-            // Finally sync invitations if available 
-            latestInvitations.value?.let { invitations ->
-                Log.d("DashboardVM", "Processing ${invitations.size} invitations")
-                syncRemoteInvitationsToLocalUseCase(invitations)
-                initialInvitationsReceived.set(true)
-            }
-            
-            // Check if sync is complete
-            checkSyncComplete()
+        // Only process if we have received projects (required for foreign key relationships)
+        val projects = latestProjects.value ?: return
+        val members = latestMembers.value ?: return
+
+        Log.d("DashboardVM", "Processing ${projects.size} projects")
+        syncRemoteProjectsToLocalUseCase(projects)
+        initialProjectsReceived.set(true)
+
+        Log.d("DashboardVM", "Processing ${members.size} members")
+        syncRemoteMembersToLocalUseCase(members)
+
+        latestTasks.value?.let { tasks ->
+            Log.d("DashboardVM", "Processing ${tasks.size} tasks")
+            syncRemoteTasksToLocalUseCase(tasks)
+            initialTasksReceived.set(true)
         }
+
+        latestInvitations.value?.let { invitations ->
+            Log.d("DashboardVM", "Processing ${invitations.size} invitations")
+            syncRemoteInvitationsToLocalUseCase(invitations)
+            initialInvitationsReceived.set(true)
+        }
+
+        checkSyncComplete()
     }
     
     private fun checkSyncComplete() {
@@ -312,8 +303,8 @@ class DashboardViewModel @Inject constructor(
 
 
     fun signOut() {
-        (application as MainApplication).applicationScope.launch {
-            listenerSyncJob?.cancel("Signing out") // Cancel listener before sign out
+        viewModelScope.launch {
+            listenerSyncJob?.cancel(CancellationException("Signing out")) // Cancel listener before sign out
             Log.d("DashboardVM", "Signing out user...")
             val result = signOutUseCase() // Use the SignOutUseCase
             if (result.isFailure) {
@@ -327,7 +318,7 @@ class DashboardViewModel @Inject constructor(
     // Optional: Manual Refresh
     fun refreshData() {
         Log.d("DashboardVM", "Manual refresh triggered.")
-        listenerSyncJob?.cancel("Manual refresh requested")
+        listenerSyncJob?.cancel(CancellationException("Manual refresh requested"))
         // Reset flags and restart listeners IF user is still logged in
         // Checking auth state here synchronously is tricky, relying on the observer is safer
         // If the user is logged in, the observer *should* restart the listeners automatically.

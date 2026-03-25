@@ -4,11 +4,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -24,12 +26,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.saokt.taskmanager.domain.model.Project
 import com.saokt.taskmanager.domain.model.Task
+import com.saokt.taskmanager.domain.model.TaskListViewMode
+import com.saokt.taskmanager.presentation.components.TaskFilterBar
 import com.saokt.taskmanager.presentation.components.TaskItem
+import com.saokt.taskmanager.presentation.components.TaskTimeline
 import com.saokt.taskmanager.presentation.navigation.Screen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -73,7 +77,8 @@ fun TaskListScreen(
             }
         },
         containerColor = MaterialTheme.colorScheme.background
-    ) { padding ->        if (state.isLoading) {
+    ) { padding ->
+        if (state.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -84,46 +89,119 @@ fun TaskListScreen(
                 CircularProgressIndicator()
             }
         } else {
-            if (state.tasks.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .windowInsetsPadding(WindowInsets.systemBars),
-                    contentAlignment = Alignment.Center
-                ) {
-                    androidx.compose.foundation.layout.Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .windowInsetsPadding(WindowInsets.systemBars)
+            ) {
+                TaskFilterBar(
+                    query = state.activeQuery,
+                    projects = state.projects,
+                    filteredCount = state.filteredTaskCount,
+                    totalCount = state.totalTaskCount,
+                    showProjectFilter = true,
+                    onStatusChange = viewModel::updateStatusFilter,
+                    onAssignmentChange = viewModel::updateAssignmentFilter,
+                    onPriorityToggle = viewModel::togglePriority,
+                    onDueDateChange = viewModel::updateDueDateFilter,
+                    onProjectChange = viewModel::updateProjectFilter,
+                    onSortChange = viewModel::updateSort,
+                    onClearFilters = viewModel::clearFilters
+                )
+
+                TaskListViewModeToggle(
+                    viewMode = state.viewMode,
+                    onViewModeChanged = viewModel::setViewMode
+                )
+
+                if (state.tasks.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "No tasks yet",
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Create your first task to start tracking work.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = if (state.hasActiveFilters) "No matching tasks" else "No tasks yet",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (state.hasActiveFilters) {
+                                    "Try changing your filters to broaden the results."
+                                } else {
+                                    "Create your first task to start tracking work."
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else if (state.viewMode == TaskListViewMode.LIST) {
+                    TaskList(
+                        tasks = state.tasks,
+                        contentPadding = PaddingValues(bottom = 24.dp),
+                        onTaskClick = { taskId ->
+                            navController.navigate(Screen.TaskDetail.createRoute(taskId))
+                        },
+                        onTaskDelete = { taskId ->
+                            viewModel.deleteTask(taskId)
+                        },
+                        snackbarHostState = snackbarHostState,
+                        onCompletionToggle = { task ->
+                            viewModel.toggleTaskCompletion(task)
+                        },
+                        projects = state.projects,
+                        currentUser = state.currentUser
+                    )
+                } else {
+                    state.timelineRange?.let { timelineRange ->
+                        TaskTimeline(
+                            timelineRange = timelineRange,
+                            items = state.timelineItems,
+                            unscheduledTasks = state.unscheduledTasks,
+                            zoom = state.timelineZoom,
+                            onZoomChange = viewModel::setTimelineZoom,
+                            onShiftBackward = { viewModel.shiftTimelineAnchor(-7) },
+                            onShiftForward = { viewModel.shiftTimelineAnchor(7) },
+                            onJumpToToday = viewModel::jumpTimelineToToday,
+                            onTaskClick = { taskId ->
+                                navController.navigate(Screen.TaskDetail.createRoute(taskId))
+                            },
+                            onPlanTask = viewModel::planTaskOnTimeline,
+                            onRescheduleTask = viewModel::rescheduleTask,
+                            onResizeTask = viewModel::resizeTaskSchedule,
+                            secondaryLabel = { task ->
+                                state.projects.firstOrNull { it.id == task.projectId }?.title
+                                    ?: if (task.assignedTo == state.currentUser?.id) "Assigned to you" else null
+                            },
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
-            } else {
-                TaskList(
-                    tasks = state.tasks,
-                    contentPadding = padding,
-                    onTaskClick = { taskId ->
-                        navController.navigate(Screen.TaskDetail.createRoute(taskId))
-                    },
-                    onTaskDelete = { taskId ->
-                        viewModel.deleteTask(taskId)
-                    },
-                    snackbarHostState = snackbarHostState,
-                    onCompletionToggle = { task ->
-                        viewModel.toggleTaskCompletion(task)
-                    },
-                    projects = state.projects,
-                    currentUser = state.currentUser
-                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TaskListViewModeToggle(
+    viewMode: TaskListViewMode,
+    onViewModeChanged: (TaskListViewMode) -> Unit
+) {
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        TaskListViewMode.entries.forEachIndexed { index, mode ->
+            SegmentedButton(
+                selected = mode == viewMode,
+                onClick = { onViewModeChanged(mode) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = TaskListViewMode.entries.size)
+            ) {
+                Text(if (mode == TaskListViewMode.LIST) "List" else "Timeline")
             }
         }
     }

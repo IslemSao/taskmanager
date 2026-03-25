@@ -7,9 +7,12 @@ data class TaskDto(
 
     val title: String = "",
     val description: String = "",
+    val startDate: Date? = null,
     val dueDate: Date? = null,
 
     val completed: Boolean = false,
+    val status: String? = null,
+    val type: String? = null,
 
     val priority: String = "MEDIUM", // Default value
     val projectId: String? = null,

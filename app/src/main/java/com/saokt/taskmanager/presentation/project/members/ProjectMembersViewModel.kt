@@ -1,6 +1,5 @@
 package com.saokt.taskmanager.presentation.project.members
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.saokt.taskmanager.domain.model.Project
@@ -11,9 +10,12 @@ import com.saokt.taskmanager.domain.usecase.project.GetProjectMembersUseCase
 import com.saokt.taskmanager.domain.usecase.project.RemoveProjectMemberUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,6 +30,7 @@ class ProjectMembersViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(ProjectMembersState())
     val state: StateFlow<ProjectMembersState> = _state.asStateFlow()
+    private var projectMembersJob: Job? = null
 
     init {
         loadCurrentUser()
@@ -42,34 +45,30 @@ class ProjectMembersViewModel @Inject constructor(
     }
 
     fun loadProjectMembers(projectId: String) {
-        Log.d("ProjectMembersDebug", "loadProjectMembers called with projectId: $projectId")
-        viewModelScope.launch {
+        projectMembersJob?.cancel()
+        projectMembersJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = true) }
 
             try {
-                // Load project details
-                Log.d("ProjectMembersDebug", "Loading project details...")
-                getProjectByIdUseCase(projectId).collect { project ->
-                    Log.d("ProjectMembersDebug", "Project loaded: ${project?.title}, ownerId: ${project?.ownerId}")
-                    Log.d("ProjectMembersDebug", "Project members array: ${project?.members}")
-                    if (project != null) {
-                        _state.update { 
-                            it.copy(
-                                project = project,
-                                isOwner = project.ownerId == state.value.currentUser?.id
-                            )
-                        }
-                        Log.d("ProjectMembersDebug", "Project state updated, isOwner: ${project.ownerId == state.value.currentUser?.id}")
+                val project = getProjectByIdUseCase(projectId).first()
+                if (project == null) {
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            error = "Project not found"
+                        )
                     }
+                    return@launch
                 }
 
-                // Load project members
-                Log.d("ProjectMembersDebug", "Loading project members from repository...")
-                getProjectMembersUseCase(projectId).collect { members ->
-                    Log.d("ProjectMembersDebug", "Members loaded from repository: ${members.size} members")
-                    members.forEach { member ->
-                        Log.d("ProjectMembersDebug", "Member: ${member.displayName} (${member.userId}) - ${member.email}")
-                    }
+                _state.update {
+                    it.copy(
+                        project = project,
+                        isOwner = project.ownerId == _state.value.currentUser?.id
+                    )
+                }
+
+                getProjectMembersUseCase(projectId).collectLatest { members ->
                     _state.update {
                         it.copy(
                             members = members,
@@ -77,10 +76,8 @@ class ProjectMembersViewModel @Inject constructor(
                             error = null
                         )
                     }
-                    Log.d("ProjectMembersDebug", "Members state updated with ${members.size} members")
                 }
             } catch (e: Exception) {
-                Log.e("ProjectMembersDebug", "Error loading project members", e)
                 _state.update {
                     it.copy(
                         isLoading = false,
@@ -98,8 +95,12 @@ class ProjectMembersViewModel @Inject constructor(
             try {
                 val result = removeProjectMemberUseCase(projectId, userId)
                 if (result.isSuccess) {
-                    // Reload members after successful removal
-                    loadProjectMembers(projectId)
+                    _state.update { currentState ->
+                        currentState.copy(
+                            members = currentState.members.filterNot { it.userId == userId },
+                            error = null
+                        )
+                    }
                 } else {
                     _state.update {
                         it.copy(

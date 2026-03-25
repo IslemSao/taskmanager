@@ -4,10 +4,12 @@ import com.saokt.taskmanager.data.repository.ProjectRepositoryImpl
 import com.saokt.taskmanager.data.repository.ChatRepositoryImpl
 import com.saokt.taskmanager.data.repository.NotificationRepositoryImpl
 import com.saokt.taskmanager.data.repository.TaskRepositoryImpl
+import com.saokt.taskmanager.data.repository.TaskPreferencesRepositoryImpl
 import com.saokt.taskmanager.data.repository.UserRepositoryImpl
 import com.saokt.taskmanager.domain.repository.ProjectRepository
 import com.saokt.taskmanager.domain.repository.ChatRepository
 import com.saokt.taskmanager.domain.repository.NotificationRepository
+import com.saokt.taskmanager.domain.repository.TaskPreferencesRepository
 import com.saokt.taskmanager.domain.repository.TaskRepository
 import com.saokt.taskmanager.domain.repository.UserRepository
 import dagger.Binds
@@ -25,6 +27,12 @@ abstract class RepositoryModule {
     abstract fun bindTaskRepository(
         taskRepositoryImpl: TaskRepositoryImpl
     ): TaskRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTaskPreferencesRepository(
+        taskPreferencesRepositoryImpl: TaskPreferencesRepositoryImpl
+    ): TaskPreferencesRepository
 
     @Binds
     @Singleton

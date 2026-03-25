@@ -9,6 +9,9 @@ import com.saokt.taskmanager.domain.usecase.auth.SignInUseCase
 import com.saokt.taskmanager.domain.usecase.auth.SignInWithGoogleUseCase
 import com.saokt.taskmanager.domain.usecase.auth.SignOutUseCase
 import com.saokt.taskmanager.domain.usecase.auth.SignUpUseCase
+import com.saokt.taskmanager.domain.usecase.auth.SendPasswordResetEmailUseCase
+import com.saokt.taskmanager.domain.usecase.auth.SendEmailVerificationUseCase
+import com.saokt.taskmanager.domain.usecase.auth.CheckEmailVerificationStatusUseCase
 import com.saokt.taskmanager.domain.usecase.project.CreateProjectUseCase
 import com.saokt.taskmanager.domain.usecase.project.GetProjectByIdUseCase
 import com.saokt.taskmanager.domain.usecase.project.GetProjectsUseCase
@@ -28,8 +31,12 @@ import com.saokt.taskmanager.domain.usecase.task.GetTaskByIdRemoteUseCase
 import com.saokt.taskmanager.domain.usecase.task.CreateTaskUseCase
 import com.saokt.taskmanager.domain.usecase.task.DeleteTaskUseCase
 import com.saokt.taskmanager.domain.usecase.task.GetTasksByProjectFromFirebaseUseCase
+import com.saokt.taskmanager.domain.usecase.task.GetTasksByProjectUseCase
 import com.saokt.taskmanager.domain.usecase.task.GetTasksUseCase
-import com.saokt.taskmanager.domain.usecase.task.ToggleTaskComplitionUseCase
+import com.saokt.taskmanager.domain.usecase.task.MoveTaskToStatusUseCase
+import com.saokt.taskmanager.domain.usecase.task.RescheduleTaskUseCase
+import com.saokt.taskmanager.domain.usecase.task.ResizeTaskScheduleUseCase
+import com.saokt.taskmanager.domain.usecase.task.ToggleTaskCompletionUseCase
 import com.saokt.taskmanager.domain.usecase.task.UpdateTaskUseCase
 import com.saokt.taskmanager.domain.usecase.chat.CreateOrGetThreadUseCase
 import com.saokt.taskmanager.domain.usecase.chat.ListenMessagesUseCase
@@ -68,6 +75,24 @@ object UseCaseModule {
     @Singleton
     fun provideSignUpUseCase(userRepository: UserRepository): SignUpUseCase {
         return SignUpUseCase(userRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSendPasswordResetEmailUseCase(userRepository: UserRepository): SendPasswordResetEmailUseCase {
+        return SendPasswordResetEmailUseCase(userRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSendEmailVerificationUseCase(userRepository: UserRepository): SendEmailVerificationUseCase {
+        return SendEmailVerificationUseCase(userRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideCheckEmailVerificationStatusUseCase(userRepository: UserRepository): CheckEmailVerificationStatusUseCase {
+        return CheckEmailVerificationStatusUseCase(userRepository)
     }
     
     @Provides
@@ -144,8 +169,14 @@ object UseCaseModule {
 
     @Provides
     @Singleton
-    fun provideToggleTaskComplitionUseCase(taskRepository: TaskRepository): ToggleTaskComplitionUseCase {
-        return ToggleTaskComplitionUseCase(taskRepository)
+    fun provideGetTasksByProjectUseCase(taskRepository: TaskRepository): GetTasksByProjectUseCase {
+        return GetTasksByProjectUseCase(taskRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideToggleTaskCompletionUseCase(taskRepository: TaskRepository): ToggleTaskCompletionUseCase {
+        return ToggleTaskCompletionUseCase(taskRepository)
     }
 
     @Provides
@@ -170,6 +201,24 @@ object UseCaseModule {
         userRepository: UserRepository
     ): UpdateTaskUseCase {
         return UpdateTaskUseCase(taskRepository, userRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideMoveTaskToStatusUseCase(taskRepository: TaskRepository): MoveTaskToStatusUseCase {
+        return MoveTaskToStatusUseCase(taskRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideRescheduleTaskUseCase(taskRepository: TaskRepository): RescheduleTaskUseCase {
+        return RescheduleTaskUseCase(taskRepository)
+    }
+
+    @Provides
+    @Singleton
+    fun provideResizeTaskScheduleUseCase(taskRepository: TaskRepository): ResizeTaskScheduleUseCase {
+        return ResizeTaskScheduleUseCase(taskRepository)
     }
 
     @Provides

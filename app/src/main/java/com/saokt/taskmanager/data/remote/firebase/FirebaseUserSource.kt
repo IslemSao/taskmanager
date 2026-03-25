@@ -6,9 +6,9 @@ import com.saokt.taskmanager.data.remote.dto.ProjectInvitationDto
 import com.saokt.taskmanager.data.remote.dto.ProjectMemberDto
 import com.saokt.taskmanager.data.remote.dto.TaskDto
 import com.google.firebase.auth.FirebaseAuth // Import FirebaseAuth
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.QuerySnapshot
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -54,6 +54,8 @@ class FirebaseUserSource @Inject constructor(
         val memberCollectionListeners = mutableMapOf<String, ListenerRegistration>()
 
         // Keep track of the latest data
+        var latestOwnerProjectDocs = emptyList<DocumentSnapshot>()
+        var latestMemberProjectDocs = emptyList<DocumentSnapshot>()
         var latestOwnerProjects = mutableListOf<ProjectDto>()
         var latestMemberProjects = mutableListOf<ProjectDto>()
         var ownerDataReceived = false
@@ -64,12 +66,57 @@ class FirebaseUserSource @Inject constructor(
             if (!ownerDataReceived || !memberDataReceived) return
 
             val combinedProjects = (latestOwnerProjects + latestMemberProjects).distinctBy { it.id }
-            Log.d("FirestoreListener", "Sending combined projects update: ${combinedProjects.size} projects")
-            Log.d("FirestoreListener", "Current members count: ${allMembers.size}")
-            allMembers.forEach { member ->
-                Log.d("FirestoreListener", "Member: ${member.userId} in project ${member.projectId}, role: ${member.role}")
-            }
             trySend(Result.success(Pair(combinedProjects, allMembers.toList())))
+        }
+
+        fun attachMembersListener(projectId: String) {
+            if (memberCollectionListeners.containsKey(projectId)) return
+
+            val membersListener = firestore.collection("projects")
+                .document(projectId)
+                .collection("members")
+                .addSnapshotListener { membersSnapshot, membersError ->
+                    if (membersError != null) {
+                        Log.e("FirestoreListener", "Error listening to members for project $projectId", membersError)
+                        return@addSnapshotListener
+                    }
+
+                    val members = membersSnapshot?.documents?.mapNotNull { memberDoc ->
+                        try {
+                            ProjectMemberDto(
+                                projectId = projectId,
+                                userId = memberDoc.getString("userId") ?: "",
+                                email = memberDoc.getString("email") ?: "",
+                                displayName = memberDoc.getString("displayName") ?: "",
+                                role = memberDoc.getString("role") ?: "MEMBER"
+                            )
+                        } catch (e: Exception) {
+                            Log.e("FirestoreListener", "Error mapping member ${memberDoc.id}", e)
+                            null
+                        }
+                    }.orEmpty()
+
+                    allMembers.removeAll { it.projectId == projectId }
+                    allMembers.addAll(members)
+                    combineAndSend()
+                }
+
+            memberCollectionListeners[projectId] = membersListener
+        }
+
+        fun syncMemberListeners() {
+            val activeProjectIds = (latestOwnerProjectDocs + latestMemberProjectDocs)
+                .map { it.id }
+                .toSet()
+
+            memberCollectionListeners.keys
+                .filterNot(activeProjectIds::contains)
+                .forEach { staleProjectId ->
+                    memberCollectionListeners.remove(staleProjectId)?.remove()
+                    allMembers.removeAll { it.projectId == staleProjectId }
+                }
+
+            activeProjectIds.forEach(::attachMembersListener)
         }
 
         // Listener for projects where user is owner
@@ -82,80 +129,17 @@ class FirebaseUserSource @Inject constructor(
             }
             if (snapshot != null) {
                 Log.d("FirestoreListener", "Owner projects snapshot received: ${snapshot.documents.size} docs")
-
-                // Clear listeners for projects we're no longer owner of
-                val currentOwnerProjectIds = snapshot.documents.map { it.id }.toSet()
-                memberCollectionListeners.keys.filterNot { currentOwnerProjectIds.contains(it) }
-                    .forEach { projectId ->
-                        Log.d("FirestoreListener", "Removing listener for old project: $projectId")
-                        memberCollectionListeners[projectId]?.remove()
-                        memberCollectionListeners.remove(projectId)
-                        allMembers.removeAll { it.projectId == projectId }
-                    }
-
+                latestOwnerProjectDocs = snapshot.documents
                 latestOwnerProjects = snapshot.documents.mapNotNull { doc ->
                     try {
-                        val project = doc.toObject(ProjectDto::class.java)?.copy(id = doc.id)
-
-                        // Set up listener for members subcollection
-                        if (project != null && !memberCollectionListeners.containsKey(doc.id)) {
-                            Log.d("FirestoreListener", "Setting up members listener for project: ${doc.id}")
-                            val membersListener = firestore.collection("projects")
-                                .document(doc.id)
-                                .collection("members")
-                                .addSnapshotListener { membersSnapshot, membersError ->
-                                    if (membersError != null) {
-                                        Log.e("FirestoreListener", "Error listening to members for project ${doc.id}", membersError)
-                                        return@addSnapshotListener
-                                    }
-
-                                    membersSnapshot?.let { ms ->
-                                        Log.d("FirestoreListener", "Members snapshot received for project ${doc.id}:")
-                                        Log.d("FirestoreListener", "Document count: ${ms.documentChanges.size}")
-                                        ms.documentChanges.forEach { change ->
-                                            Log.d("FirestoreListener", "Change type: ${change.type}, Member ID: ${change.document.id}")
-                                            Log.d("FirestoreListener", "Member data: ${change.document.data}")
-                                        }
-
-                                        // Remove old members for this project
-                                        val removedCount = allMembers.removeAll { it.projectId == doc.id }
-                                        Log.d("FirestoreListener", "Removed $removedCount old members for project ${doc.id}")
-
-                                        // Add new members with manual mapping
-                                        val members = ms.documents.mapNotNull { memberDoc ->
-                                            try {
-                                                Log.d("FirestoreListener", "Processing member document: ${memberDoc.id}")
-                                                Log.d("FirestoreListener", "Member data: ${memberDoc.data}")
-
-                                                ProjectMemberDto(
-                                                    projectId = doc.id,
-                                                    userId = memberDoc.getString("userId") ?: "",
-                                                    email = memberDoc.getString("email") ?: "",
-                                                    displayName = memberDoc.getString("displayName") ?: "",
-                                                    role = memberDoc.getString("role") ?: "MEMBER"
-                                                ).also {
-                                                    Log.d("FirestoreListener", "Mapped member: $it")
-                                                }
-                                            } catch (e: Exception) {
-                                                Log.e("FirestoreListener", "Error mapping member ${memberDoc.id}", e)
-                                                null
-                                            }
-                                        }
-                                        Log.d("FirestoreListener", "Adding ${members.size} members for project ${doc.id}")
-                                        allMembers.addAll(members)
-                                        combineAndSend()
-                                    }
-                                }
-                            memberCollectionListeners[doc.id] = membersListener
-                        }
-
-                        project
+                        doc.toObject(ProjectDto::class.java)?.copy(id = doc.id)
                     } catch (e: Exception) {
                         Log.e("FirestoreListener", "Map owner err ${doc.id}", e)
                         null
                     }
                 }.toMutableList()
                 ownerDataReceived = true
+                syncMemberListeners()
                 combineAndSend()
             }
         }
@@ -170,6 +154,7 @@ class FirebaseUserSource @Inject constructor(
             }
             if (snapshot != null) {
                 Log.d("FirestoreListener", "Member projects snapshot received: ${snapshot.documents.size} docs")
+                latestMemberProjectDocs = snapshot.documents
                 latestMemberProjects = snapshot.documents.mapNotNull { doc ->
                     try {
                         doc.toObject(ProjectDto::class.java)?.copy(id = doc.id)
@@ -179,6 +164,7 @@ class FirebaseUserSource @Inject constructor(
                     }
                 }.toMutableList()
                 memberDataReceived = true
+                syncMemberListeners()
                 combineAndSend()
             }
         }
@@ -276,13 +262,9 @@ class FirebaseUserSource @Inject constructor(
 
                 if (snapshot != null) {
                     Log.d("FirestoreListener", "Invitations snapshot received: ${snapshot.documents.size} docs for user $userId")
-
-                    // Fixed: Properly map documents to DTOs once
                     val invitations = snapshot.documents.mapNotNull { doc ->
                         try {
-                            Log.d("bombardiro", "doc: $doc")
                             val dto = doc.toObject(ProjectInvitationDto::class.java)
-                            Log.d("bombardiro", "dto: $dto")
                             dto?.copy(id = doc.id)
                         } catch (e: Exception) {
                             Log.e("FirestoreListener", "Error mapping document ${doc.id} to ProjectInvitationDto", e)
@@ -290,7 +272,6 @@ class FirebaseUserSource @Inject constructor(
                         }
                     }
 
-                    // Important: Actually send the mapped results to the Flow
                     Log.d("FirestoreListener", "Sending invitations update: ${invitations.size} invitations for user $userId")
                     trySend(Result.success(invitations))
                 } else {

@@ -3,7 +3,9 @@ package com.saokt.taskmanager.presentation.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.saokt.taskmanager.domain.model.User
+import com.saokt.taskmanager.domain.usecase.auth.CheckEmailVerificationStatusUseCase
 import com.saokt.taskmanager.domain.usecase.auth.DeleteAccountUseCase
+import com.saokt.taskmanager.domain.usecase.auth.SendEmailVerificationUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,16 +17,21 @@ import javax.inject.Inject
 data class ProfileUiState(
     val isLoading: Boolean = true,
     val isDeletingAccount: Boolean = false,
+    val isSendingVerificationEmail: Boolean = false,
     val user: User? = null,
+    val isEmailVerified: Boolean? = null,
     val accountDeleted: Boolean = false,
     val error: String? = null,
+    val message: String? = null,
     val showDeleteConfirmation: Boolean = false
 )
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val getCurrentUserUseCase: GetCurrentUserUseCase,
-    private val deleteAccountUseCase: DeleteAccountUseCase
+    private val deleteAccountUseCase: DeleteAccountUseCase,
+    private val sendEmailVerificationUseCase: SendEmailVerificationUseCase,
+    private val checkEmailVerificationStatusUseCase: CheckEmailVerificationStatusUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -44,6 +51,9 @@ class ProfileViewModel @Inject constructor(
                         isLoading = false,
                         user = user
                     )
+                    if (user != null) {
+                        refreshEmailVerificationStatus(forceRefresh = false)
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
@@ -63,6 +73,8 @@ class ProfileViewModel @Inject constructor(
     }
 
     fun deleteAccount() {
+        if (_uiState.value.isDeletingAccount) return
+
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(
@@ -92,7 +104,53 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    fun sendEmailVerification() {
+        if (_uiState.value.isSendingVerificationEmail || _uiState.value.user == null) return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isSendingVerificationEmail = true,
+                error = null,
+                message = null
+            )
+
+            val result = sendEmailVerificationUseCase()
+            if (result.isSuccess) {
+                _uiState.value = _uiState.value.copy(
+                    isSendingVerificationEmail = false,
+                    message = "Verification email sent"
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isSendingVerificationEmail = false,
+                    error = result.exceptionOrNull()?.message ?: "Failed to send verification email"
+                )
+            }
+        }
+    }
+
+    fun refreshEmailVerificationStatus(forceRefresh: Boolean = true) {
+        if (_uiState.value.user == null) return
+
+        viewModelScope.launch {
+            val result = checkEmailVerificationStatusUseCase(forceRefresh)
+            if (result.isSuccess) {
+                _uiState.value = _uiState.value.copy(
+                    isEmailVerified = result.getOrNull()
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    error = result.exceptionOrNull()?.message ?: "Failed to refresh verification status"
+                )
+            }
+        }
+    }
+
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    fun clearMessage() {
+        _uiState.value = _uiState.value.copy(message = null)
     }
 }

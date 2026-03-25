@@ -2,11 +2,21 @@
 package com.saokt.taskmanager.data.util
 
 import android.content.Context
-import androidx.work.*
+import android.util.Log
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
 import com.saokt.taskmanager.domain.repository.ProjectRepository
 import com.saokt.taskmanager.domain.repository.TaskRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
-import dagger.hilt.android.scopes.ActivityRetainedScoped
+import androidx.hilt.work.HiltWorker
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -20,19 +30,26 @@ class SyncManager @Inject constructor(
     private val taskRepository: TaskRepository,
     private val projectRepository: ProjectRepository
 ) {
+    companion object {
+        private const val TAG = "SyncManager"
+    }
+
     private val syncScope = CoroutineScope(Dispatchers.IO)
 
     // Call this method to immediately trigger a sync
     fun triggerImmediateSync() {
         syncScope.launch {
-            println("Triggering immediate sync...")
+            Log.d(TAG, "Triggering immediate sync")
             try {
                 val projectResult = projectRepository.syncPendingProjects()
                 val taskResult = taskRepository.syncPendingTasks()
 
-                println("Sync complete - Projects: ${projectResult.getOrNull() ?: 0}, Tasks: ${taskResult.getOrNull() ?: 0}")
+                Log.d(
+                    TAG,
+                    "Sync complete - Projects: ${projectResult.getOrNull() ?: 0}, Tasks: ${taskResult.getOrNull() ?: 0}"
+                )
             } catch (e: Exception) {
-                println("Sync failed: ${e.message}")
+                Log.e(TAG, "Sync failed", e)
             }
         }
     }
@@ -55,7 +72,7 @@ class SyncManager @Inject constructor(
                 syncRequest
             )
 
-        println("Scheduled periodic sync (every 15 minutes)")
+        Log.d(TAG, "Scheduled periodic sync")
     }
 
     // For immediate one-time sync (useful when network becomes available)
@@ -71,28 +88,28 @@ class SyncManager @Inject constructor(
         WorkManager.getInstance(context)
             .enqueue(syncRequest)
 
-        println("Scheduled one-time sync")
+        Log.d(TAG, "Scheduled one-time sync")
     }
+}
 
-    class SyncWorker(
-        appContext: Context,
-        params: WorkerParameters
-    ) : CoroutineWorker(appContext, params) {
+@HiltWorker
+class SyncWorker @AssistedInject constructor(
+    @Assisted appContext: Context,
+    @Assisted params: WorkerParameters,
+    private val taskRepository: TaskRepository,
+    private val projectRepository: ProjectRepository
+) : CoroutineWorker(appContext, params) {
 
-        @Inject lateinit var taskRepository: TaskRepository
-        @Inject lateinit var projectRepository: ProjectRepository
-
-        override suspend fun doWork(): Result {
-            try {
-                println("SyncWorker: Starting sync...")
-                projectRepository.syncPendingProjects()
-                taskRepository.syncPendingTasks()
-                println("SyncWorker: Sync completed")
-                return Result.success()
-            } catch (e: Exception) {
-                println("SyncWorker: Sync failed: ${e.message}")
-                return Result.retry()
-            }
+    override suspend fun doWork(): Result {
+        return try {
+            Log.d("SyncWorker", "Starting sync")
+            projectRepository.syncPendingProjects()
+            taskRepository.syncPendingTasks()
+            Log.d("SyncWorker", "Sync completed")
+            Result.success()
+        } catch (e: Exception) {
+            Log.e("SyncWorker", "Sync failed", e)
+            Result.retry()
         }
     }
 }

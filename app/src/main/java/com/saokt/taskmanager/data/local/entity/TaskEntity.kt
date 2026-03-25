@@ -7,6 +7,8 @@ import androidx.room.PrimaryKey
 import com.saokt.taskmanager.domain.model.Priority
 import com.saokt.taskmanager.domain.model.Subtask
 import com.saokt.taskmanager.domain.model.SyncStatus
+import com.saokt.taskmanager.domain.model.TaskStatus
+import com.saokt.taskmanager.domain.model.TaskType
 import java.util.Date
 
 @Entity(
@@ -26,8 +28,11 @@ data class TaskEntity(
     val id: String,
     val title: String,
     val description: String,
+    val startDate: Date?,
     val dueDate: Date?,
     val completed: Boolean,
+    val status: TaskStatus,
+    val type: TaskType,
     val priority: Priority,
     val projectId: String?,
     val labels: List<String>,

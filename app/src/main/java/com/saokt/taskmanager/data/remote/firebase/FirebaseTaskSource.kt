@@ -61,6 +61,8 @@ class FirebaseTaskSource @Inject constructor(
             val normalizedTask = taskDto.copy(
                 userId = currentUserId,
                 createdBy = currentUserId,
+                status = taskDto.status ?: if (taskDto.completed) "DONE" else "TODO",
+                type = taskDto.type ?: "TASK",
                 visibleToUserIds = visibleToUserIds
             )
 
@@ -77,21 +79,26 @@ class FirebaseTaskSource @Inject constructor(
         return try {
             val userId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
-            val canUpdate = taskDto.visibleToUserIds.contains(userId) ||
-                taskDto.createdBy == userId ||
-                isProjectOwner(taskDto.projectId, userId)
+            val existingTask = tasksCollection.document(taskDto.id).get().await().toDto<TaskDto>()?.copy(id = taskDto.id)
+                ?: return Result.failure(IllegalStateException("Task not found"))
+            val canUpdate = existingTask.visibleToUserIds.contains(userId) ||
+                existingTask.createdBy == userId ||
+                isProjectOwner(existingTask.projectId, userId)
             if (!canUpdate) {
                 return Result.failure(IllegalAccessException("Not authorized to update this task"))
             }
 
             val visibleToUserIds = computeVisibleUsers(
                 projectId = taskDto.projectId,
-                creatorId = taskDto.createdBy.ifBlank { userId },
+                creatorId = existingTask.createdBy.ifBlank { userId },
                 assignedTo = taskDto.assignedTo
             )
             val normalizedTask = taskDto.copy(
-                createdBy = taskDto.createdBy.ifBlank { userId },
-                userId = taskDto.userId.ifBlank { taskDto.createdBy.ifBlank { userId } },
+                createdAt = existingTask.createdAt,
+                createdBy = existingTask.createdBy.ifBlank { userId },
+                userId = existingTask.userId.ifBlank { existingTask.createdBy.ifBlank { userId } },
+                status = taskDto.status ?: existingTask.status ?: if (taskDto.completed) "DONE" else "TODO",
+                type = taskDto.type ?: existingTask.type ?: "TASK",
                 visibleToUserIds = visibleToUserIds,
                 modifiedAt = Date()
             )
@@ -146,6 +153,7 @@ class FirebaseTaskSource @Inject constructor(
         return try {
             val userId = auth.currentUser?.uid
                 ?: return Result.failure(IllegalStateException("User not authenticated"))
+            ensureCanAccessProject(projectId, userId)
             val tasks = tasksCollection
                 .whereEqualTo("projectId", projectId)
                 .get()
@@ -181,12 +189,15 @@ class FirebaseTaskSource @Inject constructor(
             if (!canAssign) {
                 return Result.failure(IllegalAccessException("Not authorized to assign this task"))
             }
+            ensureCanAssignTask(task.projectId, assignedToUserId)
 
             val updatedTask = task.copy(
                 assignedTo = assignedToUserId,
                 assignedBy = assignedByUserId,
                 assignedAt = Date(),
                 modifiedAt = Date(),
+                status = task.status ?: if (task.completed) "DONE" else "TODO",
+                type = task.type ?: "TASK",
                 visibleToUserIds = computeVisibleUsers(task.projectId, task.createdBy, assignedToUserId)
             )
 
@@ -200,6 +211,9 @@ class FirebaseTaskSource @Inject constructor(
 
     suspend fun getProjectMembers(projectId: String): Result<List<ProjectMemberDto>> {
         return try {
+            val userId = auth.currentUser?.uid
+                ?: return Result.failure(IllegalStateException("User not authenticated"))
+            ensureCanAccessProject(projectId, userId)
             val snapshot = firestore.collection(PROJECTS_COLLECTION)
                 .document(projectId)
                 .collection(MEMBERS_SUBCOLLECTION)
@@ -226,6 +240,13 @@ class FirebaseTaskSource @Inject constructor(
         if (!canAccess) {
             throw IllegalAccessException("Not authorized to access this project")
         }
+    }
+
+    private suspend fun ensureCanAssignTask(projectId: String?, assignedToUserId: String) {
+        if (projectId == null) {
+            return
+        }
+        ensureCanAccessProject(projectId, assignedToUserId)
     }
 
     private suspend fun computeVisibleUsers(

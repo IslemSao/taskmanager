@@ -14,6 +14,9 @@ interface UserRepository {
     suspend fun signIn(email: String, password: String): Result<User>
     suspend fun signInWithGoogle(idToken: String): Result<User>
     suspend fun signUp(email: String, password: String, displayName: String): Result<User>
+    suspend fun sendPasswordResetEmail(email: String): Result<Unit>
+    suspend fun sendEmailVerification(): Result<Unit>
+    suspend fun isCurrentUserEmailVerified(forceRefresh: Boolean = false): Result<Boolean>
     suspend fun signOut(): Result<Unit>
     suspend fun deleteAccount(): Result<Unit>
     // NEW listener flows
