@@ -5,6 +5,8 @@ import android.net.Uri
 sealed class Screen(val route: String) {
     object SignIn : Screen("sign_in")
     object SignUp : Screen("sign_up")
+    /** Bottom tab shell: [Dashboard], [TaskList], [Calendar], [ProjectList], [Profile]. */
+    object MainTabs : Screen("main_tabs")
     object Dashboard : Screen("dashboard")
     object TaskList : Screen("task_list")
     object TaskDetail : Screen("task_detail/{taskId}?projectId={projectId}") {

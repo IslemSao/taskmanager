@@ -83,10 +83,19 @@ class FirebaseAuthSource @Inject constructor(
                     "email" to normalizedEmail,
                     "displayName" to displayName,
                     "photoUrl" to user.photoUrl?.toString()
-                ),
-                SetOptions.merge()
+                )
             )
             .await()
+    }
+
+    private suspend fun syncUserMetadataBestEffort(user: FirebaseUser, displayNameOverride: String? = null) {
+        try {
+            ensureUserDocument(user, displayNameOverride)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to sync user profile document for ${user.uid}", e)
+        }
+
+        saveFcmToken(user.uid)
     }
 
     suspend fun signIn(email: String, password: String): Result<UserDto> {
@@ -95,8 +104,7 @@ class FirebaseAuthSource @Inject constructor(
             val user = authResult.user
                 ?: return Result.failure(IllegalStateException("Authentication failed"))
 
-            ensureUserDocument(user)
-            saveFcmToken(user.uid)
+            syncUserMetadataBestEffort(user)
             Result.success(
                 UserDto(
                     id = user.uid,
@@ -123,8 +131,7 @@ class FirebaseAuthSource @Inject constructor(
                 return Result.failure(IllegalStateException("Authentication failed"))
             }
 
-            ensureUserDocument(user)
-            saveFcmToken(user.uid)
+            syncUserMetadataBestEffort(user)
             val userDto = UserDto(
                 id = user.uid,
                 email = normalizeEmail(user.email),
@@ -150,8 +157,7 @@ class FirebaseAuthSource @Inject constructor(
                 .build()
 
             user.updateProfile(profileUpdates).await()
-            ensureUserDocument(user, displayName)
-            saveFcmToken(user.uid)
+            syncUserMetadataBestEffort(user, displayName)
 
             Result.success(
                 UserDto(

@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -90,11 +88,11 @@ fun ProjectMembersSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
-                LazyColumn(
+                Column(
                     modifier = Modifier.heightIn(max = 200.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(members) { member ->
+                    members.forEach { member ->
                         MemberCard(
                             member = member,
                             isOwner = isOwner,

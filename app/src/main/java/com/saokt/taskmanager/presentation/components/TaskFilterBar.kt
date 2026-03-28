@@ -1,15 +1,24 @@
 package com.saokt.taskmanager.presentation.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -18,7 +27,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import com.saokt.taskmanager.domain.model.DueDateBucket
 import com.saokt.taskmanager.domain.model.Priority
@@ -45,79 +56,120 @@ fun TaskFilterBar(
     onClearFilters: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var filtersExpanded by rememberSaveable { mutableStateOf(query.hasActiveFilters()) }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Showing $filteredCount of $totalCount tasks",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (query.hasActiveFilters()) {
-                TextButton(onClick = onClearFilters) {
-                    Text("Clear filters")
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "Showing $filteredCount of $totalCount tasks",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (query.hasActiveFilters()) {
+                    Text(
+                        text = "${query.activeFilterCount()} active ${if (query.activeFilterCount() == 1) "filter" else "filters"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
+
+            FilterChip(
+                selected = filtersExpanded || query.hasActiveFilters(),
+                onClick = { filtersExpanded = !filtersExpanded },
+                label = { Text(if (filtersExpanded) "Hide filters" else "Filters") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null
+                    )
+                }
+            )
         }
 
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        AnimatedVisibility(
+            visible = filtersExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
         ) {
-            EnumFilterChip(
-                label = "Status",
-                valueLabel = query.status.displayName(),
-                options = TaskStatusFilter.entries,
-                selectedOption = query.status,
-                onOptionSelected = onStatusChange
-            )
-            EnumFilterChip(
-                label = "Assignment",
-                valueLabel = query.assignment.displayName(),
-                options = TaskAssignmentFilter.entries,
-                selectedOption = query.assignment,
-                onOptionSelected = onAssignmentChange
-            )
-            EnumFilterChip(
-                label = "Due",
-                valueLabel = query.dueDate.displayName(),
-                options = DueDateBucket.entries,
-                selectedOption = query.dueDate,
-                onOptionSelected = onDueDateChange
-            )
-            EnumFilterChip(
-                label = "Sort",
-                valueLabel = query.sort.displayName(),
-                options = TaskSort.entries,
-                selectedOption = query.sort,
-                onOptionSelected = onSortChange
-            )
-            if (showProjectFilter) {
-                ProjectFilterChip(
-                    currentProjectId = query.projectId,
-                    projects = projects,
-                    onProjectChange = onProjectChange
-                )
-            }
-        }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (query.hasActiveFilters()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = onClearFilters) {
+                            Text("Clear filters")
+                        }
+                    }
+                }
 
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Priority.entries.forEach { priority ->
-                FilterChip(
-                    selected = priority in query.priorities,
-                    onClick = { onPriorityToggle(priority) },
-                    label = { Text(priority.name.lowercase().replaceFirstChar(Char::titlecase)) }
-                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    EnumFilterChip(
+                        label = "Status",
+                        valueLabel = query.status.displayName(),
+                        options = TaskStatusFilter.entries,
+                        selectedOption = query.status,
+                        onOptionSelected = onStatusChange
+                    )
+                    EnumFilterChip(
+                        label = "Assignment",
+                        valueLabel = query.assignment.displayName(),
+                        options = TaskAssignmentFilter.entries,
+                        selectedOption = query.assignment,
+                        onOptionSelected = onAssignmentChange
+                    )
+                    EnumFilterChip(
+                        label = "Due",
+                        valueLabel = query.dueDate.displayName(),
+                        options = DueDateBucket.entries,
+                        selectedOption = query.dueDate,
+                        onOptionSelected = onDueDateChange
+                    )
+                    EnumFilterChip(
+                        label = "Sort",
+                        valueLabel = query.sort.displayName(),
+                        options = TaskSort.entries,
+                        selectedOption = query.sort,
+                        onOptionSelected = onSortChange
+                    )
+                    if (showProjectFilter) {
+                        ProjectFilterChip(
+                            currentProjectId = query.projectId,
+                            projects = projects,
+                            onProjectChange = onProjectChange
+                        )
+                    }
+                }
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Priority.entries.forEach { priority ->
+                        FilterChip(
+                            selected = priority in query.priorities,
+                            onClick = { onPriorityToggle(priority) },
+                            label = { Text(priority.name.lowercase().replaceFirstChar(Char::titlecase)) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -132,7 +184,7 @@ private fun <T> EnumFilterChip(
     onOptionSelected: (T) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    androidx.compose.foundation.layout.Box {
+    Box {
         FilterChip(
             selected = true,
             onClick = { expanded = true },
@@ -163,7 +215,7 @@ private fun ProjectFilterChip(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val currentLabel = projects.firstOrNull { it.id == currentProjectId }?.title ?: "All projects"
-    androidx.compose.foundation.layout.Box {
+    Box {
         FilterChip(
             selected = true,
             onClick = { expanded = true },
@@ -220,4 +272,14 @@ private fun TaskSort.displayName(): String = when (this) {
     TaskSort.RECENTLY_MODIFIED -> "Recently modified"
     TaskSort.PRIORITY_HIGH_TO_LOW -> "Priority"
     TaskSort.ALPHABETICAL -> "Alphabetical"
+}
+
+private fun TaskListQuery.activeFilterCount(): Int {
+    var count = 0
+    if (status != TaskStatusFilter.ALL) count += 1
+    if (assignment != TaskAssignmentFilter.ALL) count += 1
+    if (dueDate != DueDateBucket.ANY) count += 1
+    if (projectId != null) count += 1
+    count += priorities.size
+    return count
 }

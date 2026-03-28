@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -70,8 +71,8 @@ fun ProfileScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(uiState.accountDeleted) {
-        if (uiState.accountDeleted) {
+    LaunchedEffect(uiState.accountDeleted, uiState.signedOut) {
+        if (uiState.accountDeleted || uiState.signedOut) {
             navController.navigate(Screen.SignIn.route) {
                 popUpTo(0) { inclusive = true }
             }
@@ -97,8 +98,8 @@ fun ProfileScreen(
         snackbarHostState = snackbarHostState,
         onSendVerificationEmailClick = viewModel::sendEmailVerification,
         onRefreshVerificationClick = { viewModel.refreshEmailVerificationStatus(forceRefresh = true) },
-        onDeleteAccountClick = viewModel::showDeleteConfirmation,
-        onBack = { navController.navigateUp() }
+        onSignOutClick = viewModel::signOut,
+        onDeleteAccountClick = viewModel::showDeleteConfirmation
     )
 
     if (uiState.showDeleteConfirmation) {
@@ -115,8 +116,8 @@ fun ProfileScreenContent(
     snackbarHostState: SnackbarHostState,
     onSendVerificationEmailClick: () -> Unit,
     onRefreshVerificationClick: () -> Unit,
+    onSignOutClick: () -> Unit,
     onDeleteAccountClick: () -> Unit,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Scaffold(
@@ -124,7 +125,7 @@ fun ProfileScreenContent(
             AppTopBar(
                 title = "Profile",
                 subtitle = "Your account, verification, and security settings",
-                onBack = onBack
+                onBack = null
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -157,6 +158,17 @@ fun ProfileScreenContent(
                     }
                 }
 
+                uiState.isSigningOut -> {
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(text = "Signing out...", style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+
                 uiState.user != null -> {
                     ProfileContent(
                         user = uiState.user!!,
@@ -164,15 +176,32 @@ fun ProfileScreenContent(
                         isSendingVerificationEmail = uiState.isSendingVerificationEmail,
                         onSendVerificationEmailClick = onSendVerificationEmailClick,
                         onRefreshVerificationClick = onRefreshVerificationClick,
+                        onSignOutClick = onSignOutClick,
                         onDeleteAccountClick = onDeleteAccountClick
                     )
                 }
 
                 else -> {
-                    EmptyStateCard(
-                        title = "Unable to load profile",
-                        body = "Try again in a moment. If the issue continues, sign out and back in."
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = AppTheme.screenPadding, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(AppTheme.sectionSpacing)
+                    ) {
+                        EmptyStateCard(
+                            title = "Unable to load profile",
+                            body = "Your session is active, but the saved profile details are out of sync. You can sign out and try again.",
+                            icon = Icons.Default.Info
+                        )
+                        SectionCard(title = "Session") {
+                            OutlinedButton(
+                                onClick = onSignOutClick,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Sign out")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -186,6 +215,7 @@ private fun ProfileContent(
     isSendingVerificationEmail: Boolean,
     onSendVerificationEmailClick: () -> Unit,
     onRefreshVerificationClick: () -> Unit,
+    onSignOutClick: () -> Unit,
     onDeleteAccountClick: () -> Unit
 ) {
     LazyColumn(
@@ -295,6 +325,22 @@ private fun ProfileContent(
                         Spacer(modifier = Modifier.size(8.dp))
                         Text("Refresh verification status")
                     }
+                }
+            }
+        }
+
+        item {
+            SectionCard(title = "Session") {
+                Text(
+                    text = "Switch accounts or retry sign-in if your profile details look out of date.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = onSignOutClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Sign out")
                 }
             }
         }

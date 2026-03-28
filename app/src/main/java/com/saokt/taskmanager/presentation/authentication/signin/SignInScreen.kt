@@ -131,7 +131,7 @@ fun SignInScreen(
         onErrorShown = viewModel::clearError,
         onMessageShown = viewModel::clearMessage,
         onSignedIn = {
-            navController.navigate(Screen.Dashboard.route) {
+            navController.navigate(Screen.MainTabs.route) {
                 popUpTo(Screen.SignIn.route) { inclusive = true }
             }
         }

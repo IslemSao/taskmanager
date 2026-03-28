@@ -171,6 +171,8 @@ class DashboardViewModel @Inject constructor(
                             }.onFailure { e ->
                                 Log.e("DashboardVM", "Error receiving projects", e)
                                 _error.value = "Error receiving projects: ${e.message}"
+                                initialProjectsReceived.set(true)
+                                checkSyncComplete()
                             }
                         }
                 }
@@ -187,6 +189,8 @@ class DashboardViewModel @Inject constructor(
                             }.onFailure { e ->
                                 Log.e("DashboardVM", "Error receiving tasks", e)
                                 _error.value = "Error receiving tasks: ${e.message}"
+                                initialTasksReceived.set(true)
+                                checkSyncComplete()
                             }
                         }
                 }
@@ -203,6 +207,8 @@ class DashboardViewModel @Inject constructor(
                             }.onFailure { e ->
                                 Log.e("DashboardVM", "Error receiving invitations", e)
                                 _error.value = "Error receiving invitations: ${e.message}"
+                                initialInvitationsReceived.set(true)
+                                checkSyncComplete()
                             }
                         }
                 }

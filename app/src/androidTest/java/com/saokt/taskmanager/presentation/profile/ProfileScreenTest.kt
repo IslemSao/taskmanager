@@ -33,6 +33,7 @@ class ProfileScreenTest {
                     snackbarHostState = androidx.compose.material3.SnackbarHostState(),
                     onSendVerificationEmailClick = {},
                     onRefreshVerificationClick = {},
+                    onSignOutClick = {},
                     onDeleteAccountClick = {}
                 )
             }
@@ -58,6 +59,7 @@ class ProfileScreenTest {
                     snackbarHostState = androidx.compose.material3.SnackbarHostState(),
                     onSendVerificationEmailClick = { sendClicks += 1 },
                     onRefreshVerificationClick = { refreshClicks += 1 },
+                    onSignOutClick = {},
                     onDeleteAccountClick = { deleteClicks += 1 }
                 )
             }
@@ -88,6 +90,7 @@ class ProfileScreenTest {
                     snackbarHostState = androidx.compose.material3.SnackbarHostState(),
                     onSendVerificationEmailClick = {},
                     onRefreshVerificationClick = {},
+                    onSignOutClick = {},
                     onDeleteAccountClick = {}
                 )
             }
@@ -112,6 +115,7 @@ class ProfileScreenTest {
                     snackbarHostState = androidx.compose.material3.SnackbarHostState(),
                     onSendVerificationEmailClick = {},
                     onRefreshVerificationClick = {},
+                    onSignOutClick = {},
                     onDeleteAccountClick = {}
                 )
             }
@@ -134,6 +138,7 @@ class ProfileScreenTest {
                     snackbarHostState = androidx.compose.material3.SnackbarHostState(),
                     onSendVerificationEmailClick = {},
                     onRefreshVerificationClick = {},
+                    onSignOutClick = {},
                     onDeleteAccountClick = {}
                 )
             }
@@ -156,6 +161,7 @@ class ProfileScreenTest {
                     snackbarHostState = androidx.compose.material3.SnackbarHostState(),
                     onSendVerificationEmailClick = {},
                     onRefreshVerificationClick = {},
+                    onSignOutClick = {},
                     onDeleteAccountClick = {}
                 )
             }

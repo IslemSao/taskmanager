@@ -1,25 +1,34 @@
 package com.saokt.taskmanager.presentation.navigation
 
 import android.net.Uri
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.saokt.taskmanager.presentation.authentication.signin.SignInScreen
 import com.saokt.taskmanager.presentation.authentication.signin.SignInViewModel
 import com.saokt.taskmanager.presentation.authentication.signup.SignUpScreen
 import com.saokt.taskmanager.presentation.authentication.signup.SignUpViewModel
+import com.saokt.taskmanager.presentation.calendar.CalendarScreen
+import com.saokt.taskmanager.presentation.calendar.CalendarViewModel
+import com.saokt.taskmanager.presentation.chat.ChatScreen
 import com.saokt.taskmanager.presentation.dashboard.DashboardScreen
 import com.saokt.taskmanager.presentation.dashboard.DashboardViewModel
 import com.saokt.taskmanager.presentation.invitation.InvitationsScreen
 import com.saokt.taskmanager.presentation.invitation.InvitationsViewModel
-import com.saokt.taskmanager.presentation.notification.NotificationsScreen
-import com.saokt.taskmanager.presentation.notification.NotificationsViewModel
 import com.saokt.taskmanager.presentation.notification.NotificationSettingsScreen
 import com.saokt.taskmanager.presentation.notification.NotificationSettingsViewModel
+import com.saokt.taskmanager.presentation.notification.NotificationsScreen
+import com.saokt.taskmanager.presentation.notification.NotificationsViewModel
 import com.saokt.taskmanager.presentation.profile.ProfileScreen
 import com.saokt.taskmanager.presentation.profile.ProfileViewModel
 import com.saokt.taskmanager.presentation.project.detail.ProjectDetailScreen
@@ -34,209 +43,234 @@ import com.saokt.taskmanager.presentation.tasks.detail.TaskDetailScreen
 import com.saokt.taskmanager.presentation.tasks.detail.TaskDetailViewModel
 import com.saokt.taskmanager.presentation.tasks.list.TaskListScreen
 import com.saokt.taskmanager.presentation.tasks.list.TaskListViewModel
-import com.saokt.taskmanager.presentation.calendar.CalendarScreen
-import com.saokt.taskmanager.presentation.calendar.CalendarViewModel
-import com.saokt.taskmanager.presentation.chat.ChatScreen
+
+private val mainTabRoutes = setOf(
+    Screen.Dashboard.route,
+    Screen.TaskList.route,
+    Screen.Calendar.route,
+    Screen.ProjectList.route,
+    Screen.Profile.route
+)
 
 @Composable
 fun AppNavGraph(startDestination: String = Screen.SignIn.route) {
     val navController = rememberNavController()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val showBottomBar = currentRoute in mainTabRoutes
 
-    NavHost(
-        navController = navController,
-        startDestination = startDestination
-    ) {
-        composable(Screen.SignIn.route) {
-            val viewModel: SignInViewModel = hiltViewModel()
-            SignInScreen(
-                navController = navController,
-                viewModel = viewModel
-            )
+    Scaffold(
+        bottomBar = {
+            if (showBottomBar) {
+                MainBottomNavigationBar(
+                    currentRoute = currentRoute,
+                    onNavigateToTab = { route ->
+                        navController.navigate(route) {
+                            popUpTo(Screen.MainTabs.route) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
+            }
         }
-
-        composable(Screen.SignUp.route) {
-            val viewModel: SignUpViewModel = hiltViewModel()
-            SignUpScreen(
-                navController = navController,
-                viewModel = viewModel
-            )
-        }
-
-        composable(Screen.Dashboard.route) {
-            val viewModel: DashboardViewModel = hiltViewModel()
-            DashboardScreen(
-                navController = navController,
-                viewModel = viewModel
-            )
-        }
-
-        composable(Screen.TaskList.route) {
-            val viewModel: TaskListViewModel = hiltViewModel()
-            TaskListScreen(
-                navController = navController,
-                viewModel = viewModel
-            )
-        }
-
-        composable(
-            route = Screen.TaskDetail.route,
-            arguments = listOf(
-                navArgument("taskId") { type = NavType.StringType },
-                navArgument("projectId") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                },
-            )
-        ) { backStackEntry ->
-            val taskId = Uri.decode(backStackEntry.arguments?.getString("taskId") ?: "new")
-            val projectId = backStackEntry.arguments?.getString("projectId")?.let(Uri::decode)
-            val viewModel: TaskDetailViewModel = hiltViewModel()
-            TaskDetailScreen(
-                navController = navController,
-                viewModel = viewModel,
-                taskId = taskId,
-                initialProjectId = projectId
-            )
-        }
-
-        // In your NavGraph.kt, add these composables:
-        composable(
-            route = Screen.ProjectList.route
+    ) { padding ->
+        NavHost(
+            navController = navController,
+            startDestination = startDestination,
+            modifier = Modifier.padding(padding)
         ) {
-            val viewModel = hiltViewModel<ProjectListViewModel>()
-            ProjectListScreen(navController = navController, viewModel = viewModel)
-        }
+            composable(Screen.SignIn.route) {
+                val viewModel: SignInViewModel = hiltViewModel()
+                SignInScreen(
+                    navController = navController,
+                    viewModel = viewModel
+                )
+            }
 
-        composable(
-            route = Screen.ProjectDetail.route,
-            arguments = listOf(
-                navArgument("projectId") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
+            composable(Screen.SignUp.route) {
+                val viewModel: SignUpViewModel = hiltViewModel()
+                SignUpScreen(
+                    navController = navController,
+                    viewModel = viewModel
+                )
+            }
+
+            navigation(
+                route = Screen.MainTabs.route,
+                startDestination = Screen.Dashboard.route
+            ) {
+                composable(Screen.Dashboard.route) {
+                    val viewModel: DashboardViewModel = hiltViewModel()
+                    DashboardScreen(
+                        navController = navController,
+                        viewModel = viewModel
+                    )
                 }
-            )
-        ) { entry ->
-            val projectId = entry.arguments?.getString("projectId")
-            val viewModel = hiltViewModel<ProjectDetailViewModel>()
-            ProjectDetailScreen(
-                navController = navController,
-                viewModel = viewModel,
-                projectId = projectId
-            )
-        }
-        // In your NavGraph:
-
-        composable(
-            route = Screen.AddProject.route
-        ) {
-            val viewModel = hiltViewModel<ProjectDetailViewModel>()
-            ProjectDetailScreen(
-                navController = navController,
-                viewModel = viewModel,
-                projectId = null
-            )
-        }
-
-        composable(
-            route = Screen.ProjectMembers.route,
-            arguments = listOf(
-                navArgument("projectId") {
-                    type = NavType.StringType
+                composable(Screen.TaskList.route) {
+                    val viewModel: TaskListViewModel = hiltViewModel()
+                    TaskListScreen(
+                        navController = navController,
+                        viewModel = viewModel
+                    )
                 }
-            )
-        ) { entry ->
-            val projectId = entry.arguments?.getString("projectId") ?: ""
-            val viewModel = hiltViewModel<ProjectMembersViewModel>()
-            ProjectMembersScreen(
-                navController = navController,
-                viewModel = viewModel,
-                projectId = projectId
-            )
-        }
-
-        composable(
-            route = Screen.ProjectTasks.route,
-            arguments = listOf(
-                navArgument("projectId") {
-                    type = NavType.StringType
+                composable(Screen.Calendar.route) {
+                    val viewModel: CalendarViewModel = hiltViewModel()
+                    CalendarScreen(
+                        navController = navController,
+                        viewModel = viewModel,
+                        onTaskClick = { taskId ->
+                            navController.navigate(Screen.TaskDetail.createRoute(taskId))
+                        }
+                    )
                 }
-            )
-        ) { entry ->
-            val projectId = entry.arguments?.getString("projectId") ?: ""
-            val viewModel = hiltViewModel<ProjectTasksViewModel>()
-            ProjectTasksScreen(
-                navController = navController,
-                viewModel = viewModel,
-                projectId = projectId
-            )
-        }
-
-        composable(route = Screen.Notifications.route) {
-            val viewModel: NotificationsViewModel = hiltViewModel()
-            NotificationsScreen(
-                navController = navController,
-                viewModel = viewModel
-            )
-        }
-
-        composable(route = Screen.NotificationSettings.route) {
-            val viewModel: NotificationSettingsViewModel = hiltViewModel()
-            NotificationSettingsScreen(
-                navController = navController,
-                viewModel = viewModel
-            )
-        }
-
-        composable(route = Screen.Profile.route) {
-            val viewModel: ProfileViewModel = hiltViewModel()
-            ProfileScreen(
-                navController = navController,
-                viewModel = viewModel
-            )
-        }
-
-        composable(route = Screen.Invitations.route) {
-            val viewModel: InvitationsViewModel = hiltViewModel()
-            InvitationsScreen(
-                navController = navController,
-                viewModel = viewModel
-            )
-        }
-
-        composable(route = Screen.Calendar.route) {
-            val viewModel: CalendarViewModel = hiltViewModel()
-            CalendarScreen(
-                navController = navController,
-                viewModel = viewModel,
-                onTaskClick = { taskId ->
-                    navController.navigate(Screen.TaskDetail.createRoute(taskId))
+                composable(Screen.ProjectList.route) {
+                    val viewModel: ProjectListViewModel = hiltViewModel()
+                    ProjectListScreen(
+                        navController = navController,
+                        viewModel = viewModel
+                    )
                 }
-            )
-        }
+                composable(Screen.Profile.route) {
+                    val viewModel: ProfileViewModel = hiltViewModel()
+                    ProfileScreen(
+                        navController = navController,
+                        viewModel = viewModel
+                    )
+                }
+            }
 
-        // Chat screen
-        composable(
-            route = Screen.Chat.route,
-            arguments = listOf(
-                navArgument("projectId") { type = NavType.StringType },
-                navArgument("taskId") { type = NavType.StringType; nullable = true; defaultValue = null },
-                navArgument("participants") { type = NavType.StringType },
-                navArgument("currentUserId") { type = NavType.StringType }
-            )
-        ) { entry ->
-            val projectId = Uri.decode(entry.arguments?.getString("projectId") ?: "")
-            val taskId = entry.arguments?.getString("taskId")?.let(Uri::decode)?.takeIf { it.isNotBlank() }
-            val participants = Uri.decode(entry.arguments?.getString("participants") ?: "")
-            val currentUserId = Uri.decode(entry.arguments?.getString("currentUserId") ?: "")
-            ChatScreen(
-                navController = navController,
-                projectId = projectId,
-                taskId = taskId,
-                participantsCsv = participants,
-                currentUserId = currentUserId
-            )
+            composable(
+                route = Screen.TaskDetail.route,
+                arguments = listOf(
+                    navArgument("taskId") { type = NavType.StringType },
+                    navArgument("projectId") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                )
+            ) { backStackEntry ->
+                val taskId = Uri.decode(backStackEntry.arguments?.getString("taskId") ?: "new")
+                val projectId = backStackEntry.arguments?.getString("projectId")?.let(Uri::decode)
+                val viewModel: TaskDetailViewModel = hiltViewModel()
+                TaskDetailScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    taskId = taskId,
+                    initialProjectId = projectId
+                )
+            }
+
+            composable(
+                route = Screen.ProjectDetail.route,
+                arguments = listOf(
+                    navArgument("projectId") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                )
+            ) { entry ->
+                val projectId = entry.arguments?.getString("projectId")
+                val viewModel = hiltViewModel<ProjectDetailViewModel>()
+                ProjectDetailScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    projectId = projectId
+                )
+            }
+
+            composable(
+                route = Screen.AddProject.route
+            ) {
+                val viewModel = hiltViewModel<ProjectDetailViewModel>()
+                ProjectDetailScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    projectId = null
+                )
+            }
+
+            composable(
+                route = Screen.ProjectMembers.route,
+                arguments = listOf(
+                    navArgument("projectId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { entry ->
+                val projectId = entry.arguments?.getString("projectId") ?: ""
+                val viewModel = hiltViewModel<ProjectMembersViewModel>()
+                ProjectMembersScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    projectId = projectId
+                )
+            }
+
+            composable(
+                route = Screen.ProjectTasks.route,
+                arguments = listOf(
+                    navArgument("projectId") {
+                        type = NavType.StringType
+                    }
+                )
+            ) { entry ->
+                val projectId = entry.arguments?.getString("projectId") ?: ""
+                val viewModel = hiltViewModel<ProjectTasksViewModel>()
+                ProjectTasksScreen(
+                    navController = navController,
+                    viewModel = viewModel,
+                    projectId = projectId
+                )
+            }
+
+            composable(route = Screen.Notifications.route) {
+                val viewModel: NotificationsViewModel = hiltViewModel()
+                NotificationsScreen(
+                    navController = navController,
+                    viewModel = viewModel
+                )
+            }
+
+            composable(route = Screen.NotificationSettings.route) {
+                val viewModel: NotificationSettingsViewModel = hiltViewModel()
+                NotificationSettingsScreen(
+                    navController = navController,
+                    viewModel = viewModel
+                )
+            }
+
+            composable(route = Screen.Invitations.route) {
+                val viewModel: InvitationsViewModel = hiltViewModel()
+                InvitationsScreen(
+                    navController = navController,
+                    viewModel = viewModel
+                )
+            }
+
+            composable(
+                route = Screen.Chat.route,
+                arguments = listOf(
+                    navArgument("projectId") { type = NavType.StringType },
+                    navArgument("taskId") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("participants") { type = NavType.StringType },
+                    navArgument("currentUserId") { type = NavType.StringType }
+                )
+            ) { entry ->
+                val projectId = Uri.decode(entry.arguments?.getString("projectId") ?: "")
+                val taskId = entry.arguments?.getString("taskId")?.let(Uri::decode)?.takeIf { it.isNotBlank() }
+                val participants = Uri.decode(entry.arguments?.getString("participants") ?: "")
+                val currentUserId = Uri.decode(entry.arguments?.getString("currentUserId") ?: "")
+                ChatScreen(
+                    navController = navController,
+                    projectId = projectId,
+                    taskId = taskId,
+                    participantsCsv = participants,
+                    currentUserId = currentUserId
+                )
+            }
         }
     }
 }

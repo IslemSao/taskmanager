@@ -332,7 +332,8 @@ private fun EmptyProjectTasksState(
             "Try changing the filters or sort options."
         } else {
             "Add your first task to start planning work here."
-        }
+        },
+        icon = Icons.Default.ViewAgenda
     )
 }
 
@@ -394,11 +395,11 @@ private fun BoardColumn(
                 FilterChip(selected = false, onClick = {}, label = { Text(tasks.size.toString()) })
             }
 
-            LazyColumn(
+            Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.heightIn(min = 120.dp)
             ) {
-                items(tasks, key = { it.id }) { task ->
+                tasks.forEach { task ->
                     BoardTaskCard(
                         task = task,
                         canMove = canMoveTaskById[task.id] == true,

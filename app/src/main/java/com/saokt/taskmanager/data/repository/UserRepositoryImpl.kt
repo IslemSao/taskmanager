@@ -109,6 +109,9 @@ class UserRepositoryImpl @Inject constructor(
     override fun getCurrentUser(): Flow<User?> {
         return userDao.getCurrentUser().map { entity ->
             entity?.let { User(it.id, it.email, it.displayName, it.photoUrl) }
+                ?: firebaseAuthSource.getCurrentUser()?.let { userDto ->
+                    User(userDto.id, userDto.email, userDto.displayName, userDto.photoUrl)
+                }
         }
     }
 

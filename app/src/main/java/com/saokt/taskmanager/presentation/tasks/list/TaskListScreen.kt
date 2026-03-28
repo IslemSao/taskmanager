@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -30,10 +29,9 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.saokt.taskmanager.domain.model.Project
 import com.saokt.taskmanager.domain.model.Task
-import com.saokt.taskmanager.domain.model.TaskListViewMode
+import com.saokt.taskmanager.presentation.components.AppTopBar
 import com.saokt.taskmanager.presentation.components.TaskFilterBar
 import com.saokt.taskmanager.presentation.components.TaskItem
-import com.saokt.taskmanager.presentation.components.TaskTimeline
 import com.saokt.taskmanager.presentation.navigation.Screen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -55,13 +53,10 @@ fun TaskListScreen(
     }
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Tasks") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
+            AppTopBar(
+                title = "Tasks",
+                subtitle = "Search, filter, and switch views",
+                onBack = null
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -110,14 +105,11 @@ fun TaskListScreen(
                     onClearFilters = viewModel::clearFilters
                 )
 
-                TaskListViewModeToggle(
-                    viewMode = state.viewMode,
-                    onViewModeChanged = viewModel::setViewMode
-                )
-
                 if (state.tasks.isEmpty()) {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -137,10 +129,11 @@ fun TaskListScreen(
                             )
                         }
                     }
-                } else if (state.viewMode == TaskListViewMode.LIST) {
+                } else {
                     TaskList(
                         tasks = state.tasks,
                         contentPadding = PaddingValues(bottom = 24.dp),
+                        modifier = Modifier.weight(1f),
                         onTaskClick = { taskId ->
                             navController.navigate(Screen.TaskDetail.createRoute(taskId))
                         },
@@ -154,65 +147,17 @@ fun TaskListScreen(
                         projects = state.projects,
                         currentUser = state.currentUser
                     )
-                } else {
-                    state.timelineRange?.let { timelineRange ->
-                        TaskTimeline(
-                            timelineRange = timelineRange,
-                            items = state.timelineItems,
-                            unscheduledTasks = state.unscheduledTasks,
-                            zoom = state.timelineZoom,
-                            onZoomChange = viewModel::setTimelineZoom,
-                            onShiftBackward = { viewModel.shiftTimelineAnchor(-7) },
-                            onShiftForward = { viewModel.shiftTimelineAnchor(7) },
-                            onJumpToToday = viewModel::jumpTimelineToToday,
-                            onTaskClick = { taskId ->
-                                navController.navigate(Screen.TaskDetail.createRoute(taskId))
-                            },
-                            onPlanTask = viewModel::planTaskOnTimeline,
-                            onRescheduleTask = viewModel::rescheduleTask,
-                            onResizeTask = viewModel::resizeTaskSchedule,
-                            secondaryLabel = { task ->
-                                state.projects.firstOrNull { it.id == task.projectId }?.title
-                                    ?: if (task.assignedTo == state.currentUser?.id) "Assigned to you" else null
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
                 }
             }
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TaskListViewModeToggle(
-    viewMode: TaskListViewMode,
-    onViewModeChanged: (TaskListViewMode) -> Unit
-) {
-    SingleChoiceSegmentedButtonRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        TaskListViewMode.entries.forEachIndexed { index, mode ->
-            SegmentedButton(
-                selected = mode == viewMode,
-                onClick = { onViewModeChanged(mode) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = TaskListViewMode.entries.size)
-            ) {
-                Text(if (mode == TaskListViewMode.LIST) "List" else "Timeline")
-            }
-        }
-    }
-}
-
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskList(
     tasks: List<Task>,
     contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
     projects: List<Project>,
     onTaskClick: (String) -> Unit,
     onTaskDelete: (String) -> Unit,
@@ -238,7 +183,7 @@ fun TaskList(
     LazyColumn(
         state = listState,
         contentPadding = contentPadding,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {

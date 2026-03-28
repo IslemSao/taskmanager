@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -36,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.saokt.taskmanager.domain.model.Project
 import com.saokt.taskmanager.domain.model.ProjectMember
+import com.saokt.taskmanager.presentation.components.AppTopBar
 import com.saokt.taskmanager.presentation.navigation.Screen
 import kotlinx.coroutines.launch
 
@@ -61,13 +61,10 @@ fun ProjectListScreen(
     }
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Projects") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
+            AppTopBar(
+                title = "Projects",
+                subtitle = "Browse and manage your workspaces",
+                onBack = null
             )
         },
         floatingActionButton = {

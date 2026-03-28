@@ -6,6 +6,7 @@ import com.saokt.taskmanager.domain.model.User
 import com.saokt.taskmanager.domain.usecase.auth.CheckEmailVerificationStatusUseCase
 import com.saokt.taskmanager.domain.usecase.auth.DeleteAccountUseCase
 import com.saokt.taskmanager.domain.usecase.auth.SendEmailVerificationUseCase
+import com.saokt.taskmanager.domain.usecase.auth.SignOutUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,10 +17,12 @@ import javax.inject.Inject
 
 data class ProfileUiState(
     val isLoading: Boolean = true,
+    val isSigningOut: Boolean = false,
     val isDeletingAccount: Boolean = false,
     val isSendingVerificationEmail: Boolean = false,
     val user: User? = null,
     val isEmailVerified: Boolean? = null,
+    val signedOut: Boolean = false,
     val accountDeleted: Boolean = false,
     val error: String? = null,
     val message: String? = null,
@@ -29,6 +32,7 @@ data class ProfileUiState(
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
     private val getCurrentUserUseCase: GetCurrentUserUseCase,
+    private val signOutUseCase: SignOutUseCase,
     private val deleteAccountUseCase: DeleteAccountUseCase,
     private val sendEmailVerificationUseCase: SendEmailVerificationUseCase,
     private val checkEmailVerificationStatusUseCase: CheckEmailVerificationStatusUseCase
@@ -70,6 +74,31 @@ class ProfileViewModel @Inject constructor(
 
     fun hideDeleteConfirmation() {
         _uiState.value = _uiState.value.copy(showDeleteConfirmation = false)
+    }
+
+    fun signOut() {
+        if (_uiState.value.isSigningOut || _uiState.value.isDeletingAccount) return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isSigningOut = true,
+                error = null,
+                message = null
+            )
+
+            val result = signOutUseCase()
+            if (result.isSuccess) {
+                _uiState.value = _uiState.value.copy(
+                    isSigningOut = false,
+                    signedOut = true
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isSigningOut = false,
+                    error = result.exceptionOrNull()?.message ?: "Failed to sign out"
+                )
+            }
+        }
     }
 
     fun deleteAccount() {

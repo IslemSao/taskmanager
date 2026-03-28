@@ -12,15 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +58,7 @@ fun CalendarScreen(
             AppTopBar(
                 title = "Calendar",
                 subtitle = "See what is scheduled and what still needs a plan",
-                onBack = { navController.popBackStack() }
+                onBack = null
             )
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -218,35 +213,52 @@ private fun MonthGrid(
         for (day in 1..daysInMonth) add(month.atDay(day))
         while (size % 7 != 0) add(null)
     }
+    val rows = cells.chunked(7)
 
-    LazyVerticalGrid(
-        modifier = Modifier.fillMaxWidth(),
-        columns = GridCells.Fixed(7),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        userScrollEnabled = false,
-        contentPadding = PaddingValues(top = 8.dp)
     ) {
-        items(cells) { date ->
-            DayCell(
-                date = date,
-                selected = date != null && date == selectedDate,
-                hasTasks = date?.let(hasTasks) == true,
-                onClick = { date?.let(onSelectDate) }
-            )
+        rows.forEach { week ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                week.forEach { date ->
+                    if (date == null) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                        )
+                    } else {
+                        DayCell(
+                            modifier = Modifier.weight(1f),
+                            date = date,
+                            selected = date == selectedDate,
+                            hasTasks = hasTasks(date),
+                            onClick = { onSelectDate(date) }
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun DayCell(
+    modifier: Modifier = Modifier,
     date: LocalDate?,
     selected: Boolean,
     hasTasks: Boolean,
     onClick: () -> Unit
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
+            .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
             .background(
                 when {

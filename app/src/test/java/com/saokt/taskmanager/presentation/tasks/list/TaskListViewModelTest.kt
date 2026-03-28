@@ -6,14 +6,11 @@ import com.saokt.taskmanager.domain.model.Task
 import com.saokt.taskmanager.domain.model.TaskAssignmentFilter
 import com.saokt.taskmanager.domain.model.TaskListQuery
 import com.saokt.taskmanager.domain.model.TaskListViewMode
-import com.saokt.taskmanager.domain.model.TimelineEdge
 import com.saokt.taskmanager.domain.model.TimelineZoom
 import com.saokt.taskmanager.domain.repository.TaskPreferencesRepository
 import com.saokt.taskmanager.domain.usecase.project.GetProjectsUseCase
 import com.saokt.taskmanager.domain.usecase.task.DeleteTaskUseCase
 import com.saokt.taskmanager.domain.usecase.task.GetTasksUseCase
-import com.saokt.taskmanager.domain.usecase.task.RescheduleTaskUseCase
-import com.saokt.taskmanager.domain.usecase.task.ResizeTaskScheduleUseCase
 import com.saokt.taskmanager.domain.usecase.task.ToggleTaskCompletionUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import com.saokt.taskmanager.testing.MainDispatcherRule
@@ -37,8 +34,6 @@ class TaskListViewModelTest {
     private val getTasksUseCase = mockk<GetTasksUseCase>()
     private val getProjectsUseCase = mockk<GetProjectsUseCase>()
     private val deleteTaskUseCase = mockk<DeleteTaskUseCase>(relaxed = true)
-    private val rescheduleTaskUseCase = mockk<RescheduleTaskUseCase>(relaxed = true)
-    private val resizeTaskScheduleUseCase = mockk<ResizeTaskScheduleUseCase>(relaxed = true)
     private val toggleTaskCompletionUseCase = mockk<ToggleTaskCompletionUseCase>(relaxed = true)
     private val getCurrentUserUseCase = mockk<GetCurrentUserUseCase>()
     private val preferencesRepository = FakeTaskPreferencesRepository()
@@ -59,8 +54,6 @@ class TaskListViewModelTest {
             getTasksUseCase = getTasksUseCase,
             getProjectsUseCase = getProjectsUseCase,
             deleteTaskUseCase = deleteTaskUseCase,
-            rescheduleTaskUseCase = rescheduleTaskUseCase,
-            resizeTaskScheduleUseCase = resizeTaskScheduleUseCase,
             toggleTaskCompletionUseCase = toggleTaskCompletionUseCase,
             getCurrentUserUseCase = getCurrentUserUseCase,
             taskPreferencesRepository = preferencesRepository
@@ -86,8 +79,6 @@ class TaskListViewModelTest {
             getTasksUseCase = getTasksUseCase,
             getProjectsUseCase = getProjectsUseCase,
             deleteTaskUseCase = deleteTaskUseCase,
-            rescheduleTaskUseCase = rescheduleTaskUseCase,
-            resizeTaskScheduleUseCase = resizeTaskScheduleUseCase,
             toggleTaskCompletionUseCase = toggleTaskCompletionUseCase,
             getCurrentUserUseCase = getCurrentUserUseCase,
             taskPreferencesRepository = preferencesRepository

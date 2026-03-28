@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
 
         // Set the start destination based on authentication state
         startDestination = if (isAuthenticated) {
-            Screen.Dashboard.route
+            Screen.MainTabs.route
         } else {
             Screen.SignIn.route
         }

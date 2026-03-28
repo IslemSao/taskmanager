@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.tasks.await
@@ -73,33 +74,26 @@ class FCMTokenManager @Inject constructor(
     private suspend fun updateTokenInFirestore(userId: String, token: String) {
         try {
             val userRef = firestore.collection("users").document(userId)
-            val updateData = hashMapOf<String, Any>(
-                "fcmToken" to token,
-                "tokenLastUpdated" to System.currentTimeMillis(),
-                "deviceInfo" to mapOf(
-                    "platform" to "android",
-                    "appVersion" to getAppVersion(),
-                    "lastActive" to System.currentTimeMillis()
-                )
-            )
-
-            userRef.update(updateData).await()
+            userRef.set(
+                mapOf(
+                    "userId" to userId,
+                    "fcmToken" to token
+                ),
+                SetOptions.merge()
+            ).await()
             Log.d(TAG, "FCM token updated in Firestore for user: $userId")
 
         } catch (e: Exception) {
             // If update fails, try to set the token (in case the document doesn't exist)
             try {
                 val userRef = firestore.collection("users").document(userId)
-                val setData = hashMapOf<String, Any>(
-                    "fcmToken" to token,
-                    "tokenLastUpdated" to System.currentTimeMillis(),
-                    "deviceInfo" to mapOf(
-                        "platform" to "android",
-                        "appVersion" to getAppVersion(),
-                        "lastActive" to System.currentTimeMillis()
-                    )
-                )
-                userRef.set(setData).await()
+                userRef.set(
+                    mapOf(
+                        "userId" to userId,
+                        "fcmToken" to token
+                    ),
+                    SetOptions.merge()
+                ).await()
                 Log.d(TAG, "FCM token set in Firestore for user: $userId")
             } catch (setException: Exception) {
                 Log.e(TAG, "Failed to set FCM token in Firestore", setException)
@@ -120,12 +114,13 @@ class FCMTokenManager @Inject constructor(
             }
 
             val userRef = firestore.collection("users").document(userId)
-            val updateData = hashMapOf<String, Any>(
-                "fcmToken" to "",
-                "tokenLastUpdated" to System.currentTimeMillis()
-            )
-
-            userRef.update(updateData).await()
+            userRef.set(
+                mapOf(
+                    "userId" to userId,
+                    "fcmToken" to ""
+                ),
+                SetOptions.merge()
+            ).await()
             clearStoredToken()
             Log.d(TAG, "FCM token removed from Firestore for user: $userId")
             Result.success(Unit)
@@ -183,12 +178,4 @@ class FCMTokenManager @Inject constructor(
             .apply()
     }
 
-    private fun getAppVersion(): String {
-        return try {
-            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "unknown"
-        } catch (e: Exception) {
-            "unknown"
-        }
-    }
 }

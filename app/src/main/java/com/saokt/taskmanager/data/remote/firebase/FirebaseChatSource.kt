@@ -4,12 +4,14 @@ import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import com.saokt.taskmanager.data.remote.dto.ChatMessageDto
 import com.saokt.taskmanager.data.remote.dto.ChatThreadDto
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import java.security.MessageDigest
 import javax.inject.Inject
 
 class FirebaseChatSource @Inject constructor(
@@ -19,8 +21,15 @@ class FirebaseChatSource @Inject constructor(
     private val threadsCol = firestore.collection("chat_threads")
 
     fun listenThreadsByProject(projectId: String): Flow<List<ChatThreadDto>> = callbackFlow {
+        val userId = auth.currentUser?.uid
+        if (userId == null) {
+            trySend(emptyList()).isSuccess
+            close()
+            return@callbackFlow
+        }
         val reg = threadsCol
             .whereEqualTo("projectId", projectId)
+            .whereArrayContains("participantIds", userId)
             .orderBy("lastUpdatedAt", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, e ->
                 if (e != null) {
@@ -54,22 +63,13 @@ class FirebaseChatSource @Inject constructor(
     suspend fun createOrGetThread(projectId: String, taskId: String?, participants: List<String>): Result<ChatThreadDto> {
         return try {
             val userId = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Not authenticated"))
-            val finalParticipants = (participants + userId).distinct()
+            val finalParticipants = (participants + userId).distinct().sorted()
             Log.d("FirebaseChat", "createOrGetThread: projectId=$projectId taskId=$taskId participants=${finalParticipants.joinToString()}")
 
-            // Query for existing thread with same participants + project + task
-            val query = threadsCol
-                .whereEqualTo("projectId", projectId)
-                .whereArrayContains("participantIds", userId)
-                .get().await()
-
-            val found = query.documents.mapNotNull { it.toObject(ChatThreadDto::class.java)?.copy(id = it.id) }
-                .firstOrNull { it.taskId == taskId && it.participantIds.toSet() == finalParticipants.toSet() }
-            if (found != null) return Result.success(found)
-
-            val doc = threadsCol.document()
+            val docId = buildThreadId(projectId = projectId, taskId = taskId, participants = finalParticipants)
+            val doc = threadsCol.document(docId)
             val dto = ChatThreadDto(
-                id = doc.id,
+                id = docId,
                 projectId = projectId,
                 taskId = taskId,
                 participantIds = finalParticipants,
@@ -77,7 +77,7 @@ class FirebaseChatSource @Inject constructor(
                 lastMessagePreview = null,
                 lastUpdatedAt = java.util.Date()
             )
-            doc.set(dto).await()
+            doc.set(dto, SetOptions.merge()).await()
             Result.success(dto)
         } catch (e: Exception) {
             Log.e("FirebaseChat", "createOrGetThread error", e)
@@ -129,5 +129,17 @@ class FirebaseChatSource @Inject constructor(
             Log.e("FirebaseChat", "markAsRead error", e)
             Result.failure(e)
         }
+    }
+
+    private fun buildThreadId(projectId: String, taskId: String?, participants: List<String>): String {
+        val rawKey = buildString {
+            append(projectId)
+            append("|")
+            append(taskId.orEmpty())
+            append("|")
+            append(participants.joinToString(","))
+        }
+        val digest = MessageDigest.getInstance("SHA-256").digest(rawKey.toByteArray())
+        return digest.joinToString("") { byte -> "%02x".format(byte) }
     }
 }

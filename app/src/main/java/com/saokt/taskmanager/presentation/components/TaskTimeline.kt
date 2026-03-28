@@ -1,5 +1,6 @@
 package com.saokt.taskmanager.presentation.components
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,8 +8,8 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -19,15 +20,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -42,12 +40,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalDensity
 import com.saokt.taskmanager.domain.model.Task
 import com.saokt.taskmanager.domain.model.TaskStatus
 import com.saokt.taskmanager.domain.model.TimelineEdge
@@ -55,7 +54,9 @@ import com.saokt.taskmanager.domain.model.TimelineItem
 import com.saokt.taskmanager.domain.model.TimelineRange
 import com.saokt.taskmanager.domain.model.TimelineZoom
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlin.math.roundToInt
 
 @Composable
@@ -76,9 +77,10 @@ fun TaskTimeline(
     modifier: Modifier = Modifier
 ) {
     val horizontalScroll = rememberScrollState()
-    val cellWidth = zoom.cellWidth()
-    val chartWidth = cellWidth * timelineRange.totalDays
-    val headerFormatter = remember(zoom) {
+    val configuration = LocalConfiguration.current
+    val monthFormatter = remember { DateTimeFormatter.ofPattern("MMM yyyy") }
+    val compactHeaderFormatter = remember { DateTimeFormatter.ofPattern("dd MMM") }
+    val expandedHeaderFormatter = remember(zoom) {
         when (zoom) {
             TimelineZoom.DAY -> DateTimeFormatter.ofPattern("EEE\ndd")
             TimelineZoom.WEEK -> DateTimeFormatter.ofPattern("dd MMM")
@@ -86,90 +88,136 @@ fun TaskTimeline(
         }
     }
 
-    Column(
-        modifier = modifier.fillMaxSize()
-    ) {
-        TimelineToolbar(
-            zoom = zoom,
-            onZoomChange = onZoomChange,
-            onShiftBackward = onShiftBackward,
-            onShiftForward = onShiftForward,
-            onJumpToToday = onJumpToToday
-        )
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val isCompact = maxWidth < 680.dp
+        val cellWidth = zoom.cellWidth(compact = isCompact)
+        val chartWidth = cellWidth * timelineRange.totalDays
 
-        TimelineHeader(
-            range = timelineRange,
-            cellWidth = cellWidth,
-            chartWidth = chartWidth,
-            horizontalScroll = horizontalScroll,
-            formatter = headerFormatter
-        )
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        Column(
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(items, key = { it.task.id }) { item ->
-                TimelineRow(
-                    item = item,
+            TimelineSummaryCard(
+                range = timelineRange,
+                scheduledCount = items.size,
+                unscheduledCount = unscheduledTasks.size,
+                monthFormatter = monthFormatter
+            )
+
+            TimelineToolbar(
+                zoom = zoom,
+                isCompact = isCompact,
+                onZoomChange = onZoomChange,
+                onShiftBackward = onShiftBackward,
+                onShiftForward = onShiftForward,
+                onJumpToToday = onJumpToToday
+            )
+
+            if (isCompact && configuration.orientation != Configuration.ORIENTATION_LANDSCAPE) {
+                CompactTimelineHint()
+            }
+
+            TimelineHeader(
+                range = timelineRange,
+                cellWidth = cellWidth,
+                chartWidth = chartWidth,
+                horizontalScroll = horizontalScroll,
+                formatter = if (isCompact) compactHeaderFormatter else expandedHeaderFormatter,
+                compact = isCompact,
+                monthFormatter = monthFormatter
+            )
+
+            if (items.isEmpty()) {
+                EmptyScheduledTimelineState(hasUnscheduledTasks = unscheduledTasks.isNotEmpty())
+            } else if (isCompact) {
+                CompactTimelineRows(
+                    items = items,
+                    range = timelineRange,
                     cellWidth = cellWidth,
                     chartWidth = chartWidth,
-                    range = timelineRange,
                     horizontalScroll = horizontalScroll,
-                    secondaryLabel = secondaryLabel(item.task),
-                    onTaskClick = { onTaskClick(item.task.id) },
-                    onRescheduleTask = { onRescheduleTask(item.task, it) },
-                    onResizeTask = { edge, delta -> onResizeTask(item.task, edge, delta) }
+                    secondaryLabel = secondaryLabel,
+                    onTaskClick = onTaskClick,
+                    onRescheduleTask = onRescheduleTask,
+                    onResizeTask = onResizeTask
+                )
+            } else {
+                ExpandedTimelineRows(
+                    items = items,
+                    range = timelineRange,
+                    cellWidth = cellWidth,
+                    chartWidth = chartWidth,
+                    horizontalScroll = horizontalScroll,
+                    secondaryLabel = secondaryLabel,
+                    onTaskClick = onTaskClick,
+                    onRescheduleTask = onRescheduleTask,
+                    onResizeTask = onResizeTask
                 )
             }
 
             if (unscheduledTasks.isNotEmpty()) {
-                item("unscheduled_header") {
-                    Text(
-                        text = "Unscheduled",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-                items(unscheduledTasks, key = { "unscheduled-${it.id}" }) { task ->
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = task.title,
-                                    style = MaterialTheme.typography.titleSmall
-                                )
-                                secondaryLabel(task)?.let { label ->
-                                    Text(
-                                        text = label,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { onTaskClick(task.id) }) {
-                                    Text("Open")
-                                }
-                                Button(onClick = { onPlanTask(task) }) {
-                                    Text("Plan Today")
-                                }
-                            }
-                        }
-                    }
-                }
+                UnscheduledTasksSection(
+                    unscheduledTasks = unscheduledTasks,
+                    secondaryLabel = secondaryLabel,
+                    onTaskClick = onTaskClick,
+                    onPlanTask = onPlanTask
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimelineSummaryCard(
+    range: TimelineRange,
+    scheduledCount: Int,
+    unscheduledCount: Int,
+    monthFormatter: DateTimeFormatter
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = formatRangeHeadline(range, monthFormatter),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "${range.start.format(DateTimeFormatter.ofPattern("dd MMM"))} to ${range.end.format(DateTimeFormatter.ofPattern("dd MMM"))}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "$scheduledCount scheduled",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = if (unscheduledCount == 0) {
+                        "All tasks placed"
+                    } else {
+                        "$unscheduledCount still unscheduled"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -179,34 +227,96 @@ fun TaskTimeline(
 @Composable
 private fun TimelineToolbar(
     zoom: TimelineZoom,
+    isCompact: Boolean,
     onZoomChange: (TimelineZoom) -> Unit,
     onShiftBackward: () -> Unit,
     onShiftForward: () -> Unit,
     onJumpToToday: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onShiftBackward) { Text("Earlier") }
-            OutlinedButton(onClick = onJumpToToday) { Text("Today") }
-            OutlinedButton(onClick = onShiftForward) { Text("Later") }
-        }
+    if (isCompact) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = onShiftBackward, modifier = Modifier.weight(1f)) { Text("Earlier") }
+                OutlinedButton(onClick = onJumpToToday, modifier = Modifier.weight(1f)) { Text("Today") }
+                OutlinedButton(onClick = onShiftForward, modifier = Modifier.weight(1f)) { Text("Later") }
+            }
 
-        SingleChoiceSegmentedButtonRow {
-            TimelineZoom.entries.forEachIndexed { index, option ->
-                SegmentedButton(
-                    selected = zoom == option,
-                    onClick = { onZoomChange(option) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = TimelineZoom.entries.size)
-                ) {
-                    Text(option.name.lowercase().replaceFirstChar(Char::uppercase))
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                TimelineZoom.entries.forEachIndexed { index, option ->
+                    SegmentedButton(
+                        selected = zoom == option,
+                        onClick = { onZoomChange(option) },
+                        modifier = Modifier.weight(1f),
+                        shape = SegmentedButtonDefaults.itemShape(
+                            index = index,
+                            count = TimelineZoom.entries.size
+                        )
+                    ) {
+                        Text(option.name.lowercase().replaceFirstChar(Char::uppercase))
+                    }
                 }
             }
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = onShiftBackward) { Text("Earlier") }
+                OutlinedButton(onClick = onJumpToToday) { Text("Today") }
+                OutlinedButton(onClick = onShiftForward) { Text("Later") }
+            }
+
+            SingleChoiceSegmentedButtonRow {
+                TimelineZoom.entries.forEachIndexed { index, option ->
+                    SegmentedButton(
+                        selected = zoom == option,
+                        onClick = { onZoomChange(option) },
+                        shape = SegmentedButtonDefaults.itemShape(
+                            index = index,
+                            count = TimelineZoom.entries.size
+                        )
+                    ) {
+                        Text(option.name.lowercase().replaceFirstChar(Char::uppercase))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactTimelineHint() {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = "Portrait works, landscape is better",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Text(
+                text = "You can plan tasks here, but rotating the phone gives you the full Gantt board and much more context at once.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
         }
     }
 }
@@ -217,15 +327,39 @@ private fun TimelineHeader(
     cellWidth: Dp,
     chartWidth: Dp,
     horizontalScroll: androidx.compose.foundation.ScrollState,
-    formatter: DateTimeFormatter
+    formatter: DateTimeFormatter,
+    compact: Boolean,
+    monthFormatter: DateTimeFormatter
 ) {
-    val today = remember { LocalDate.now() }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.width(180.dp))
+    val today = LocalDate.now()
+    val monthSegments = remember(range.start, range.end) { buildMonthSegments(range) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier
+                .horizontalScroll(horizontalScroll)
+                .width(chartWidth)
+        ) {
+            monthSegments.forEach { segment ->
+                Box(
+                    modifier = Modifier
+                        .width(cellWidth * segment.dayCount)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Text(
+                        text = segment.month.format(monthFormatter),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+        }
+
         Row(
             modifier = Modifier
                 .horizontalScroll(horizontalScroll)
@@ -237,26 +371,31 @@ private fun TimelineHeader(
                 Box(
                     modifier = Modifier
                         .width(cellWidth)
-                        .height(52.dp)
+                        .height(if (compact) 46.dp else 52.dp)
                         .padding(horizontal = 2.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(
-                            if (isToday) {
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                            when {
+                                isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                day.isWeekend() -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+                                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)
                             }
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = day.format(formatter),
-                        style = MaterialTheme.typography.labelMedium,
+                        style = if (compact) {
+                            MaterialTheme.typography.labelSmall
+                        } else {
+                            MaterialTheme.typography.labelMedium
+                        },
                         color = if (isToday) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
+                            MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
-                        }
+                        },
+                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium
                     )
                 }
             }
@@ -265,35 +404,67 @@ private fun TimelineHeader(
 }
 
 @Composable
-private fun TimelineRow(
-    item: TimelineItem,
+private fun ExpandedTimelineRows(
+    items: List<TimelineItem>,
+    range: TimelineRange,
     cellWidth: Dp,
     chartWidth: Dp,
+    horizontalScroll: androidx.compose.foundation.ScrollState,
+    secondaryLabel: (Task) -> String?,
+    onTaskClick: (String) -> Unit,
+    onRescheduleTask: (Task, Long) -> Unit,
+    onResizeTask: (Task, TimelineEdge, Long) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        items.forEach { item ->
+            ExpandedTimelineRow(
+                item = item,
+                range = range,
+                cellWidth = cellWidth,
+                chartWidth = chartWidth,
+                horizontalScroll = horizontalScroll,
+                secondaryLabel = secondaryLabel(item.task),
+                onTaskClick = { onTaskClick(item.task.id) },
+                onRescheduleTask = { deltaDays -> onRescheduleTask(item.task, deltaDays) },
+                onResizeTask = { edge, deltaDays -> onResizeTask(item.task, edge, deltaDays) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExpandedTimelineRow(
+    item: TimelineItem,
     range: TimelineRange,
+    cellWidth: Dp,
+    chartWidth: Dp,
     horizontalScroll: androidx.compose.foundation.ScrollState,
     secondaryLabel: String?,
     onTaskClick: () -> Unit,
     onRescheduleTask: (Long) -> Unit,
     onResizeTask: (TimelineEdge, Long) -> Unit
 ) {
-    val dayOffset = java.time.temporal.ChronoUnit.DAYS.between(range.start, item.start).toInt()
-    val barWidth = if (item.isMilestone) 18.dp else cellWidth * item.spanDays
-    val barOffset = cellWidth * dayOffset
-
     Row(
         modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top
     ) {
         Card(
-            modifier = Modifier
-                .width(180.dp)
-                .padding(end = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            modifier = Modifier.width(232.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+            )
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 Text(
                     text = item.task.title,
                     style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -304,67 +475,291 @@ private fun TimelineRow(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (!item.canEditSchedule) {
-                    FilterChip(
-                        selected = false,
-                        onClick = {},
-                        label = { Text("Read only") },
-                        modifier = Modifier.padding(top = 8.dp)
+                Text(
+                    text = formatTaskWindow(item),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TimelineBadgeRow(item = item)
+            }
+        }
+
+        TimelineLane(
+            item = item,
+            range = range,
+            cellWidth = cellWidth,
+            chartWidth = chartWidth,
+            horizontalScroll = horizontalScroll,
+            laneHeight = 68.dp,
+            onTaskClick = onTaskClick,
+            onRescheduleTask = onRescheduleTask,
+            onResizeTask = onResizeTask
+        )
+    }
+}
+
+@Composable
+private fun CompactTimelineRows(
+    items: List<TimelineItem>,
+    range: TimelineRange,
+    cellWidth: Dp,
+    chartWidth: Dp,
+    horizontalScroll: androidx.compose.foundation.ScrollState,
+    secondaryLabel: (Task) -> String?,
+    onTaskClick: (String) -> Unit,
+    onRescheduleTask: (Task, Long) -> Unit,
+    onResizeTask: (Task, TimelineEdge, Long) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        items.forEach { item ->
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.14f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = item.task.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            secondaryLabel(item.task)?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = formatTaskWindow(item),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        TimelineBadgeRow(item = item)
+                    }
+
+                    TimelineLane(
+                        item = item,
+                        range = range,
+                        cellWidth = cellWidth,
+                        chartWidth = chartWidth,
+                        horizontalScroll = horizontalScroll,
+                        laneHeight = 56.dp,
+                        onTaskClick = { onTaskClick(item.task.id) },
+                        onRescheduleTask = { deltaDays -> onRescheduleTask(item.task, deltaDays) },
+                        onResizeTask = { edge, deltaDays -> onResizeTask(item.task, edge, deltaDays) }
                     )
                 }
             }
         }
+    }
+}
 
-        Box(
+@Composable
+private fun TimelineBadgeRow(item: TimelineItem) {
+    Column(
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        StatusBadge(status = item.task.status)
+        if (!item.canEditSchedule) {
+            SmallMetaPill(label = "Read only")
+        }
+    }
+}
+
+@Composable
+private fun TimelineLane(
+    item: TimelineItem,
+    range: TimelineRange,
+    cellWidth: Dp,
+    chartWidth: Dp,
+    horizontalScroll: androidx.compose.foundation.ScrollState,
+    laneHeight: Dp,
+    onTaskClick: () -> Unit,
+    onRescheduleTask: (Long) -> Unit,
+    onResizeTask: (TimelineEdge, Long) -> Unit
+) {
+    val today = LocalDate.now()
+    val dayOffset = ChronoUnit.DAYS.between(range.start, item.start).toInt()
+    val barWidth = if (item.isMilestone) 18.dp else cellWidth * item.spanDays
+    val barOffset = cellWidth * dayOffset
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = laneHeight)
+    ) {
+        Row(
             modifier = Modifier
-                .heightIn(min = 68.dp)
-                .fillMaxWidth()
+                .horizontalScroll(horizontalScroll)
+                .width(chartWidth)
         ) {
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(horizontalScroll)
-                    .width(chartWidth)
-            ) {
-                repeat(range.totalDays) {
-                    Box(
-                        modifier = Modifier
-                            .width(cellWidth)
-                            .height(68.dp)
-                            .padding(horizontal = 2.dp)
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                                shape = RoundedCornerShape(12.dp)
-                            )
+            repeat(range.totalDays) { offset ->
+                val day = range.start.plusDays(offset.toLong())
+                Box(
+                    modifier = Modifier
+                        .width(cellWidth)
+                        .height(laneHeight)
+                        .padding(horizontal = 2.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            when {
+                                day == today -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                                day.isWeekend() -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f)
+                                else -> Color.Transparent
+                            }
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = if (day == today) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                            } else {
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                            },
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .horizontalScroll(horizontalScroll)
+                .width(chartWidth)
+                .padding(top = (laneHeight - 38.dp) / 2)
+        ) {
+            Box(modifier = Modifier.fillMaxWidth()) {
+                if (item.isMilestone) {
+                    MilestoneNode(
+                        item = item,
+                        cellWidth = cellWidth,
+                        barOffset = barOffset,
+                        onTaskClick = onTaskClick,
+                        onRescheduleTask = onRescheduleTask
+                    )
+                } else {
+                    TimelineBar(
+                        item = item,
+                        cellWidth = cellWidth,
+                        barOffset = barOffset,
+                        barWidth = barWidth,
+                        onTaskClick = onTaskClick,
+                        onRescheduleTask = onRescheduleTask,
+                        onResizeTask = onResizeTask
                     )
                 }
             }
+        }
+    }
+}
 
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(horizontalScroll)
-                    .width(chartWidth)
-                    .padding(top = 14.dp)
+@Composable
+private fun EmptyScheduledTimelineState(hasUnscheduledTasks: Boolean) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = "No scheduled tasks in this view",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = if (hasUnscheduledTasks) {
+                    "Use the unscheduled section below to place tasks onto the timeline."
+                } else {
+                    "Create a task with dates to start building the timeline."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun UnscheduledTasksSection(
+    unscheduledTasks: List<Task>,
+    secondaryLabel: (Task) -> String?,
+    onTaskClick: (String) -> Unit,
+    onPlanTask: (Task) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "Unscheduled",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        unscheduledTasks.forEach { task ->
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+                )
             ) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    if (item.isMilestone) {
-                        MilestoneNode(
-                            item = item,
-                            cellWidth = cellWidth,
-                            barOffset = barOffset,
-                            onTaskClick = onTaskClick,
-                            onRescheduleTask = onRescheduleTask
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = task.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
                         )
-                    } else {
-                        TimelineBar(
-                            item = item,
-                            cellWidth = cellWidth,
-                            barOffset = barOffset,
-                            barWidth = barWidth,
-                            onTaskClick = onTaskClick,
-                            onRescheduleTask = onRescheduleTask,
-                            onResizeTask = onResizeTask
+                        secondaryLabel(task)?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = "No dates yet",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onTaskClick(task.id) }) {
+                            Text("Open")
+                        }
+                        Button(onClick = { onPlanTask(task) }) {
+                            Text("Plan today")
+                        }
                     }
                 }
             }
@@ -384,13 +779,19 @@ private fun TimelineBar(
 ) {
     val density = LocalDensity.current
     val cellWidthPx = with(density) { cellWidth.toPx() }
+    val barColor = statusColor(item.task.status)
     Box(
         modifier = Modifier
             .padding(start = barOffset)
             .width(barWidth)
             .height(38.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(statusColor(item.task.status))
+            .background(barColor)
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(14.dp)
+            )
             .testTag("timeline_bar_${item.task.id}")
             .clickable(onClick = onTaskClick)
             .pointerInput(item.task.id, cellWidthPx, item.canEditSchedule) {
@@ -403,7 +804,9 @@ private fun TimelineBar(
                     },
                     onDragEnd = {
                         val deltaDays = (totalDrag / cellWidthPx).roundToInt().toLong()
-                        if (deltaDays != 0L) onRescheduleTask(deltaDays)
+                        if (deltaDays != 0L) {
+                            onRescheduleTask(deltaDays)
+                        }
                     }
                 )
             }
@@ -421,7 +824,8 @@ private fun TimelineBar(
             Text(
                 text = item.task.title,
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimary,
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
@@ -450,7 +854,7 @@ private fun ResizeHandle(
             .width(14.dp)
             .fillMaxHeight()
             .background(
-                if (enabled) MaterialTheme.colorScheme.scrim.copy(alpha = 0.2f) else Color.Transparent
+                if (enabled) Color.Black.copy(alpha = 0.16f) else Color.Transparent
             )
             .pointerInput(enabled, edge, cellWidthPx) {
                 if (!enabled) return@pointerInput
@@ -462,7 +866,9 @@ private fun ResizeHandle(
                     },
                     onDragEnd = {
                         val deltaDays = (totalDrag / cellWidthPx).roundToInt().toLong()
-                        if (deltaDays != 0L) onResizeTask(edge, deltaDays)
+                        if (deltaDays != 0L) {
+                            onResizeTask(edge, deltaDays)
+                        }
                     }
                 )
             }
@@ -498,11 +904,93 @@ private fun MilestoneNode(
                     },
                     onDragEnd = {
                         val deltaDays = (totalDrag / cellWidthPx).roundToInt().toLong()
-                        if (deltaDays != 0L) onRescheduleTask(deltaDays) else onTaskClick()
+                        if (deltaDays != 0L) {
+                            onRescheduleTask(deltaDays)
+                        } else {
+                            onTaskClick()
+                        }
                     }
                 )
             }
     )
+}
+
+@Composable
+private fun StatusBadge(status: TaskStatus) {
+    val background = when (status) {
+        TaskStatus.TODO -> Color(0x332F6BFF)
+        TaskStatus.IN_PROGRESS -> Color(0x33E68A00)
+        TaskStatus.DONE -> Color(0x331B8A5A)
+    }
+    val content = when (status) {
+        TaskStatus.TODO -> Color(0xFF7FA6FF)
+        TaskStatus.IN_PROGRESS -> Color(0xFFFFB24D)
+        TaskStatus.DONE -> Color(0xFF5DD39E)
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(background)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = status.name.replace('_', ' ').lowercase().replaceFirstChar(Char::uppercase),
+            style = MaterialTheme.typography.labelSmall,
+            color = content,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun SmallMetaPill(label: String) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun formatTaskWindow(item: TimelineItem): String {
+    val formatter = DateTimeFormatter.ofPattern("dd MMM")
+    return if (item.isMilestone) {
+        "Milestone on ${item.start.format(formatter)}"
+    } else {
+        val days = item.spanDays
+        "${item.start.format(formatter)} - ${item.end.format(formatter)}  |  $days day${if (days == 1) "" else "s"}"
+    }
+}
+
+private fun formatRangeHeadline(range: TimelineRange, formatter: DateTimeFormatter): String {
+    return if (YearMonth.from(range.start) == YearMonth.from(range.end)) {
+        range.start.format(formatter)
+    } else {
+        "${range.start.format(formatter)} - ${range.end.format(formatter)}"
+    }
+}
+
+private fun buildMonthSegments(range: TimelineRange): List<MonthSegment> {
+    if (range.totalDays <= 0) return emptyList()
+
+    val segments = mutableListOf<MonthSegment>()
+    var cursor = range.start
+    while (!cursor.isAfter(range.end)) {
+        val currentMonth = YearMonth.from(cursor)
+        val lastDayInMonth = currentMonth.atEndOfMonth().coerceAtMost(range.end)
+        val dayCount = ChronoUnit.DAYS.between(cursor, lastDayInMonth).toInt() + 1
+        segments += MonthSegment(month = currentMonth, dayCount = dayCount)
+        cursor = lastDayInMonth.plusDays(1)
+    }
+    return segments
 }
 
 private fun statusColor(status: TaskStatus): Color {
@@ -513,10 +1001,19 @@ private fun statusColor(status: TaskStatus): Color {
     }
 }
 
-private fun TimelineZoom.cellWidth(): Dp {
+private fun TimelineZoom.cellWidth(compact: Boolean): Dp {
     return when (this) {
-        TimelineZoom.DAY -> 72.dp
-        TimelineZoom.WEEK -> 52.dp
-        TimelineZoom.MONTH -> 34.dp
+        TimelineZoom.DAY -> if (compact) 56.dp else 72.dp
+        TimelineZoom.WEEK -> if (compact) 44.dp else 56.dp
+        TimelineZoom.MONTH -> if (compact) 32.dp else 40.dp
     }
 }
+
+private fun LocalDate.isWeekend(): Boolean {
+    return dayOfWeek.value >= 6
+}
+
+private data class MonthSegment(
+    val month: YearMonth,
+    val dayCount: Int
+)

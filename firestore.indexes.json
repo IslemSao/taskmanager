@@ -143,6 +143,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "projectId", "order": "ASCENDING" },
+        { "fieldPath": "participantIds", "arrayConfig": "CONTAINS" },
         { "fieldPath": "lastUpdatedAt", "order": "DESCENDING" }
       ]
     },
@@ -157,4 +158,3 @@
   ],
   "fieldOverrides": []
 }
-

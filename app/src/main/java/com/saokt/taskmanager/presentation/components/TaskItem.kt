@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.saokt.taskmanager.domain.model.Priority
 import com.saokt.taskmanager.domain.model.Task
@@ -40,7 +41,8 @@ fun TaskItem(
     onCompletionToggle: (Task) -> Unit,
     projectMembers: List<com.saokt.taskmanager.domain.model.ProjectMember> = emptyList(),
     currentUser: com.saokt.taskmanager.domain.model.User? = null,
-    projects: List<com.saokt.taskmanager.domain.model.Project> = emptyList()
+    projects: List<com.saokt.taskmanager.domain.model.Project> = emptyList(),
+    horizontalPadding: Dp = 16.dp
 ) {
     val isAssignedToMe = currentUser != null && task.assignedTo == currentUser.id && task.createdBy != currentUser.id
     val assignee = projectMembers.find { it.userId == task.assignedTo }
@@ -49,21 +51,21 @@ fun TaskItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = horizontalPadding, vertical = 8.dp)
             .clickable(onClick = onClick),
         elevation = CardDefaults.cardElevation(
-            defaultElevation = 2.dp,
-            pressedElevation = 4.dp
+            defaultElevation = 0.dp,
+            pressedElevation = 2.dp
         ),
         colors = CardDefaults.cardColors(
             containerColor = if (task.completed)
-                MaterialTheme.colorScheme.surfaceVariant
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
             else if (isAssignedToMe)
-                MaterialTheme.colorScheme.secondaryContainer
+                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
             else
-                MaterialTheme.colorScheme.surface
+                MaterialTheme.colorScheme.surfaceContainerLow
         ),
-        shape = MaterialTheme.shapes.medium
+        shape = MaterialTheme.shapes.large
     ) {
         Row(
             modifier = Modifier

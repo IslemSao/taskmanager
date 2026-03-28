@@ -33,9 +33,9 @@ service cloud.firestore {
 
     function isProjectMemberFromData(data) {
       return isAuthenticated() && data != null && (
-        (data.keys().hasAny(['ownerId']) && data.ownerId == authUid()) ||
-        (data.keys().hasAny(['members']) && data.members is list && authUid() in data.members) ||
-        (data.keys().hasAny(['memberIds']) && data.memberIds is list && authUid() in data.memberIds)
+        data.ownerId == authUid() ||
+        (data.members is list && authUid() in data.members) ||
+        (data.memberIds is list && authUid() in data.memberIds)
       );
     }
 
@@ -52,20 +52,29 @@ service cloud.firestore {
 
     function isInvitationRecipientFromData(data) {
       return isAuthenticated() && data != null && (
-        (data.keys().hasAny(['inviteeId']) && data.inviteeId == authUid()) ||
-        (authEmail() != "" && data.keys().hasAny(['inviteeEmail']) && data.inviteeEmail == authEmail())
+        data.inviteeId == authUid() ||
+        (authEmail() != "" && data.inviteeEmail == authEmail())
       );
     }
 
     function isInvitationActorFromData(data) {
       return isAuthenticated() && data != null && (
-        (data.keys().hasAny(['inviterId']) && data.inviterId == authUid()) ||
+        data.inviterId == authUid() ||
         isInvitationRecipientFromData(data)
       );
     }
 
+    function canReadInvitation(data) {
+      return isInvitationActorFromData(data) || (
+        data != null &&
+        data.keys().hasAny(['projectId']) &&
+        data.projectId is string &&
+        isProjectOwner(data.projectId)
+      );
+    }
+
     function isTaskActorFromData(data) {
-      return isAuthenticated() && (
+      return isAuthenticated() && data != null && (
         data.userId == authUid() ||
         data.createdBy == authUid() ||
         data.assignedTo == authUid() ||
@@ -88,21 +97,97 @@ service cloud.firestore {
         listChangesOnlySelf(resource.data.memberIds, request.resource.data.memberIds);
     }
 
+    function hasValidProjectMemberLists(data, ownerId) {
+      return data.keys().hasAll(['members', 'memberIds']) &&
+        data.members is list &&
+        data.memberIds is list &&
+        ownerId in data.members &&
+        ownerId in data.memberIds;
+    }
+
+    function hasValidProjectWriteShape(data, ownerId) {
+      return data.ownerId == ownerId &&
+        hasValidProjectMemberLists(data, ownerId);
+    }
+
+    function isValidProjectMemberWrite(data, projectId, memberId, allowOwnerRole) {
+      return data.projectId == projectId &&
+        data.userId == memberId &&
+        data.email is string &&
+        data.displayName is string &&
+        data.role is string &&
+        (
+          data.role == 'MEMBER' ||
+          (allowOwnerRole && data.role == 'OWNER')
+        );
+    }
+
+    function canManageLegacyMemberDoc(data) {
+      return data != null &&
+        data.keys().hasAny(['projectId']) &&
+        data.projectId is string &&
+        (
+          isProjectOwner(data.projectId) ||
+          (
+            data.keys().hasAny(['userId']) &&
+            data.userId == authUid()
+          )
+        );
+    }
+
+    function isValidLegacyMemberWrite(data) {
+      return canManageLegacyMemberDoc(data) &&
+        data.projectId is string &&
+        data.userId is string &&
+        data.email is string &&
+        data.displayName is string &&
+        data.role is string &&
+        (
+          data.role == 'MEMBER' ||
+          (
+            data.role == 'OWNER' &&
+            isProjectOwner(data.projectId)
+          )
+        );
+    }
+
     function canReadTask(data) {
       return isAuthenticated() && data != null && (
-        (data.projectId != null && isProjectMember(data.projectId)) ||
+        (
+          data.keys().hasAny(['projectId']) &&
+          data.projectId is string &&
+          isProjectMember(data.projectId)
+        ) ||
         isTaskActorFromData(data)
       );
     }
 
     function validThreadParticipants(projectId, participantIds) {
+      let project = projectData(projectId);
+      let allowedParticipantIds = (
+        (
+          project.memberIds is list
+            ? project.memberIds
+            : []
+        ).concat(
+          (
+            project.members is list
+              ? project.members
+              : []
+          )
+        ).concat(
+          project.keys().hasAny(['ownerId']) && project.ownerId is string
+            ? [project.ownerId]
+            : []
+        )
+      );
       return participantIds is list &&
         participantIds.size() > 0 &&
         participantIds.size() <= 50 &&
         authUid() in participantIds &&
         projectExists(projectId) &&
-        projectData(projectId).memberIds is list &&
-        participantIds.hasOnly(projectData(projectId).memberIds);
+        allowedParticipantIds.size() > 0 &&
+        participantIds.hasOnly(allowedParticipantIds);
     }
 
     function inThread(threadId) {
@@ -121,48 +206,94 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSelf(userId);
-      allow create, update: if isSelf(userId) &&
-        request.resource.data.keys().hasOnly(['userId', 'email', 'displayName', 'photoUrl', 'fcmToken']) &&
+      allow create: if isSelf(userId) &&
+        request.resource.data.keys().hasOnly([
+          'userId',
+          'email',
+          'displayName',
+          'photoUrl',
+          'fcmToken',
+          'deviceInfo',
+          'tokenLastUpdated'
+        ]) &&
+        (!request.resource.data.keys().hasAny(['userId']) || request.resource.data.userId == userId) &&
+        (!request.resource.data.keys().hasAny(['email']) || request.resource.data.email == authEmail());
+      allow update: if isSelf(userId) &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'userId',
+          'email',
+          'displayName',
+          'photoUrl',
+          'fcmToken',
+          'deviceInfo',
+          'tokenLastUpdated'
+        ]) &&
         (!request.resource.data.keys().hasAny(['userId']) || request.resource.data.userId == userId) &&
         (!request.resource.data.keys().hasAny(['email']) || request.resource.data.email == authEmail());
       allow delete: if isSelf(userId);
     }
 
     match /projects/{projectId} {
-      allow get: if resource.data != null && isProjectMemberFromData(resource.data);
-      allow list: if isAuthenticated();
+      allow read: if isAuthenticated();
 
       allow create: if isAuthenticated() &&
-        request.resource.data.ownerId == authUid() &&
-        request.resource.data.members is list &&
-        request.resource.data.memberIds is list &&
-        authUid() in request.resource.data.members &&
-        authUid() in request.resource.data.memberIds;
+        hasValidProjectWriteShape(request.resource.data, authUid());
 
-      allow update: if isProjectOwner(projectId) || isSelfMembershipOnlyProjectUpdate();
+      allow update: if (
+        isProjectOwner(projectId) &&
+        hasValidProjectWriteShape(request.resource.data, resource.data.ownerId)
+      ) || (
+        !isProjectOwner(projectId) &&
+        isSelfMembershipOnlyProjectUpdate()
+      );
       allow delete: if isProjectOwner(projectId);
 
       match /members/{memberId} {
         allow read: if isProjectMember(projectId);
 
-        allow create, update: if isProjectOwner(projectId) || (
+        allow create, update: if (
+          isProjectOwner(projectId) &&
+          isValidProjectMemberWrite(request.resource.data, projectId, memberId, true)
+        ) || (
           isSelf(memberId) &&
-          request.resource.data.userId == authUid() &&
-          request.resource.data.projectId == projectId &&
-          request.resource.data.role == 'MEMBER'
+          isValidProjectMemberWrite(request.resource.data, projectId, memberId, false)
         );
 
         allow delete: if isProjectOwner(projectId) || isSelf(memberId);
       }
     }
 
+    match /project_members/{memberDocId} {
+      allow read: if resource.data != null &&
+        resource.data.projectId is string &&
+        isProjectMember(resource.data.projectId);
+
+      allow create, update: if request.resource.data != null &&
+        isValidLegacyMemberWrite(request.resource.data);
+
+      allow delete: if canManageLegacyMemberDoc(resource.data);
+    }
+
+    match /projectMembers/{memberDocId} {
+      allow read: if resource.data != null &&
+        resource.data.projectId is string &&
+        isProjectMember(resource.data.projectId);
+
+      allow create, update: if request.resource.data != null &&
+        isValidLegacyMemberWrite(request.resource.data);
+
+      allow delete: if canManageLegacyMemberDoc(resource.data);
+    }
+
     match /project_invitations/{invitationId} {
-      allow read: if resource.data != null && isInvitationActorFromData(resource.data);
+      allow read: if resource.data != null && canReadInvitation(resource.data);
 
       allow create: if isAuthenticated() &&
+        request.resource.data.projectId is string &&
         request.resource.data.inviterId == authUid() &&
         request.resource.data.status == 'PENDING' &&
         request.resource.data.inviteeEmail is string &&
+        request.resource.data.inviteeEmail == request.resource.data.inviteeEmail.lower() &&
         isProjectOwner(request.resource.data.projectId);
 
       allow update: if isInvitationActorFromData(resource.data) && (
@@ -179,8 +310,7 @@ service cloud.firestore {
     }
 
     match /tasks/{taskId} {
-      allow get: if canReadTask(resource.data);
-      allow list: if isAuthenticated();
+      allow read: if isAuthenticated();
 
       allow create: if isAuthenticated() &&
         request.resource.data.createdBy == authUid() &&
@@ -189,7 +319,10 @@ service cloud.firestore {
         authUid() in request.resource.data.visibleToUserIds &&
         (
           request.resource.data.projectId == null ||
-          isProjectMember(request.resource.data.projectId)
+          (
+            request.resource.data.projectId is string &&
+            isProjectMember(request.resource.data.projectId)
+          )
         );
 
       allow update, delete: if (
@@ -198,9 +331,7 @@ service cloud.firestore {
     }
 
     match /chat_threads/{threadId} {
-      allow read: if isAuthenticated() &&
-        resource.data.participantIds is list &&
-        authUid() in resource.data.participantIds;
+      allow read: if isAuthenticated();
 
       allow create: if isAuthenticated() &&
         request.resource.data.projectId is string &&
@@ -209,13 +340,30 @@ service cloud.firestore {
 
       allow update: if isAuthenticated() &&
         resource.data.participantIds is list &&
-        authUid() in resource.data.participantIds &&
-        request.resource.data.diff(resource.data).changedKeys().hasOnly(['lastMessagePreview', 'lastUpdatedAt']);
+        authUid() in resource.data.participantIds && (
+          request.resource.data.diff(resource.data).changedKeys().hasOnly(['lastMessagePreview', 'lastUpdatedAt']) ||
+          (
+            request.resource.data.diff(resource.data).changedKeys().hasOnly([
+              'id',
+              'projectId',
+              'taskId',
+              'participantIds',
+              'createdAt',
+              'lastMessagePreview',
+              'lastUpdatedAt'
+            ]) &&
+            request.resource.data.id == resource.data.id &&
+            request.resource.data.projectId == resource.data.projectId &&
+            request.resource.data.taskId == resource.data.taskId &&
+            request.resource.data.createdAt == resource.data.createdAt &&
+            request.resource.data.participantIds == resource.data.participantIds
+          )
+        );
 
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if inThread(threadId);
+        allow read: if isAuthenticated();
 
         allow create: if isAuthenticated() &&
           inThread(threadId) &&

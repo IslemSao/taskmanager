@@ -8,27 +8,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Add // Keep FAB icon
-import androidx.compose.material.icons.filled.Create
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
@@ -60,7 +55,8 @@ import androidx.navigation.NavController
 import com.saokt.taskmanager.domain.model.Project
 import com.saokt.taskmanager.domain.model.Task
 // import com.saokt.taskmanager.presentation.authentication.signin.SignInViewModel // No longer needed here
-import com.saokt.taskmanager.presentation.components.TaskItem // Assuming this exists
+import com.saokt.taskmanager.presentation.components.AppTopBar
+import com.saokt.taskmanager.presentation.components.TaskItem
 import com.saokt.taskmanager.presentation.navigation.Screen
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,17 +84,36 @@ fun DashboardScreen(
     }
 
     Scaffold(
+        topBar = {
+            AppTopBar(
+                title = "Home",
+                subtitle = "Overview of projects and what is due next",
+                onBack = null,
+                actions = {
+                    IconButton(onClick = { navController.navigate(Screen.Invitations.route) }) {
+                        Icon(Icons.Default.Email, contentDescription = "Invitations")
+                    }
+                    IconButton(onClick = { navController.navigate(Screen.Notifications.route) }) {
+                        Icon(Icons.Default.Notifications, contentDescription = "Notifications")
+                    }
+                    IconButton(onClick = { navController.navigate(Screen.Profile.route) }) {
+                        Icon(Icons.Default.Person, contentDescription = "Profile")
+                    }
+                }
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = {
-                    // Navigate to create a new task (or project?)
-                    navController.navigate(Screen.TaskDetail.createRoute()) // Example
-                }
+                onClick = { navController.navigate(Screen.TaskDetail.createRoute()) },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add") // Generic Add icon
+                Icon(Icons.Default.Add, contentDescription = "Add task")
             }
-        }    ) { padding ->
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
         // Show loading indicator based on ViewModel's state
         if (state.isLoading) {
             Box(
@@ -130,14 +145,8 @@ fun DashboardScreen(
                 onViewAllProjectsClick = {
                     navController.navigate(Screen.ProjectList.route)
                 },
-                onViewCalendarClick = {
-                    navController.navigate(Screen.Calendar.route)
-                },
                 onCreateProjectClick = {
                     navController.navigate(Screen.ProjectDetail.createRoute())
-                },
-                onViewNotificationsClick = {
-                    navController.navigate(Screen.Notifications.route)
                 }
                 // Pass refresh lambda if you added a refresh mechanism
                 // onRefresh = { viewModel.refreshData() }
@@ -157,9 +166,7 @@ fun DashboardContent(
     onProjectClick: (String) -> Unit,
     onViewAllTasksClick: () -> Unit,
     onViewAllProjectsClick: () -> Unit,
-    onViewCalendarClick: () -> Unit,
     onCreateProjectClick: () -> Unit,
-    onViewNotificationsClick: () -> Unit,
     onCompletionToggle: (Task) -> Unit
     // onRefresh: () -> Unit // Add if implementing SwipeRefresh or similar
 ) {
@@ -188,12 +195,10 @@ fun DashboardContent(
         }
 
         item {
-            QuickActionsSection(
+            DashboardShortcutsRow(
                 onViewAllTasksClick = onViewAllTasksClick,
                 onViewAllProjectsClick = onViewAllProjectsClick,
-                onViewCalendarClick = onViewCalendarClick,
-                onCreateProjectClick = onCreateProjectClick,
-                onViewNotificationsClick = onViewNotificationsClick
+                onCreateProjectClick = onCreateProjectClick
             )
         }
 
@@ -316,134 +321,41 @@ private fun SummaryPill(
 }
 
 @Composable
-fun QuickActionsSection(
+private fun DashboardShortcutsRow(
     onViewAllTasksClick: () -> Unit,
     onViewAllProjectsClick: () -> Unit,
-    onViewCalendarClick: () -> Unit,
-    onCreateProjectClick: () -> Unit,
-    onViewNotificationsClick: () -> Unit
+    onCreateProjectClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
     ) {
-        SectionHeader(title = "Quick Actions")
-
-        Spacer(modifier = Modifier.height(8.dp))
-
+        SectionHeader(title = "Shortcuts")
+        Spacer(modifier = Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            ActionCard(
-                icon = Icons.AutoMirrored.Filled.List,
-                title = "Tasks",
-                subtitle = "Review what's next",
+            FilledTonalButton(
                 onClick = onViewAllTasksClick,
                 modifier = Modifier.weight(1f)
-            )
-
-            ActionCard(
-                icon = Icons.Default.DateRange,
-                title = "Calendar",
-                subtitle = "Plan the week",
-                onClick = onViewCalendarClick,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            ActionCard(
-                icon = Icons.Default.Create,
-                title = "New Project",
-                subtitle = "Start something new",
-                onClick = onCreateProjectClick,
-                modifier = Modifier.weight(1f)
-            )
-
-            ActionCard(
-                icon = Icons.Default.FolderOpen,
-                title = "Projects",
-                subtitle = "Track all spaces",
+            ) {
+                Text("All tasks")
+            }
+            FilledTonalButton(
                 onClick = onViewAllProjectsClick,
                 modifier = Modifier.weight(1f)
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            ActionCard(
-                icon = Icons.Default.Notifications,
-                title = "Notifications",
-                subtitle = "See recent alerts",
-                onClick = onViewNotificationsClick,
-                modifier = Modifier.weight(1f)
-            )
-            
-            Spacer(modifier = Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-fun ActionCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier
-            .height(118.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                Text("All projects")
             }
-
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        FilledTonalButton(
+            onClick = onCreateProjectClick,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("New project")
         }
     }
 }
@@ -626,6 +538,8 @@ fun UpcomingTasksSection(
                         task = task,
                         onClick = { onTaskClick(task.id) },
                         onCompletionToggle = { onCompletionToggle(task) },
+                        projects = projects,
+                        horizontalPadding = 0.dp
                     )
                 }
             }

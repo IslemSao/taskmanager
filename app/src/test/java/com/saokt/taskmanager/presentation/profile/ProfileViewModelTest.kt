@@ -6,7 +6,9 @@ import com.saokt.taskmanager.domain.repository.UserRepository
 import com.saokt.taskmanager.domain.usecase.auth.CheckEmailVerificationStatusUseCase
 import com.saokt.taskmanager.domain.usecase.auth.DeleteAccountUseCase
 import com.saokt.taskmanager.domain.usecase.auth.SendEmailVerificationUseCase
+import com.saokt.taskmanager.domain.usecase.auth.SignOutUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
+import com.saokt.taskmanager.notification.FCMTokenManager
 import com.saokt.taskmanager.testing.MainDispatcherRule
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -29,6 +31,7 @@ class ProfileViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private val userRepository = mockk<UserRepository>()
+    private val fcmTokenManager = mockk<FCMTokenManager>(relaxed = true)
     private lateinit var viewModel: ProfileViewModel
 
     @Before
@@ -43,6 +46,7 @@ class ProfileViewModelTest {
 
         viewModel = ProfileViewModel(
             getCurrentUserUseCase = GetCurrentUserUseCase(userRepository),
+            signOutUseCase = SignOutUseCase(userRepository, fcmTokenManager),
             deleteAccountUseCase = DeleteAccountUseCase(userRepository),
             sendEmailVerificationUseCase = SendEmailVerificationUseCase(userRepository),
             checkEmailVerificationStatusUseCase = CheckEmailVerificationStatusUseCase(userRepository)
@@ -67,6 +71,7 @@ class ProfileViewModelTest {
 
         viewModel = ProfileViewModel(
             getCurrentUserUseCase = GetCurrentUserUseCase(userRepository),
+            signOutUseCase = SignOutUseCase(userRepository, fcmTokenManager),
             deleteAccountUseCase = DeleteAccountUseCase(userRepository),
             sendEmailVerificationUseCase = SendEmailVerificationUseCase(userRepository),
             checkEmailVerificationStatusUseCase = CheckEmailVerificationStatusUseCase(userRepository)
@@ -183,6 +188,7 @@ class ProfileViewModelTest {
         every { userRepository.getCurrentUser() } returns flowOf(null)
         viewModel = ProfileViewModel(
             getCurrentUserUseCase = GetCurrentUserUseCase(userRepository),
+            signOutUseCase = SignOutUseCase(userRepository, fcmTokenManager),
             deleteAccountUseCase = DeleteAccountUseCase(userRepository),
             sendEmailVerificationUseCase = SendEmailVerificationUseCase(userRepository),
             checkEmailVerificationStatusUseCase = CheckEmailVerificationStatusUseCase(userRepository)

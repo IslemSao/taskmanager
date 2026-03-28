@@ -6,24 +6,17 @@ import com.saokt.taskmanager.domain.model.Project
 import com.saokt.taskmanager.domain.model.TaskListViewMode
 import com.saokt.taskmanager.domain.model.TaskAssignmentFilter
 import com.saokt.taskmanager.domain.model.TaskListQuery
-import com.saokt.taskmanager.domain.model.TaskPermissionEvaluator
 import com.saokt.taskmanager.domain.model.TaskQueryEngine
 import com.saokt.taskmanager.domain.model.TaskSort
 import com.saokt.taskmanager.domain.model.TaskStatusFilter
 import com.saokt.taskmanager.domain.model.DueDateBucket
 import com.saokt.taskmanager.domain.model.Priority
 import com.saokt.taskmanager.domain.model.Task
-import com.saokt.taskmanager.domain.model.TaskTimelineEngine
-import com.saokt.taskmanager.domain.model.TimelineEdge
-import com.saokt.taskmanager.domain.model.TimelineItem
-import com.saokt.taskmanager.domain.model.TimelineRange
 import com.saokt.taskmanager.domain.model.TimelineZoom
 import com.saokt.taskmanager.domain.repository.TaskPreferencesRepository
 import com.saokt.taskmanager.domain.usecase.project.GetProjectsUseCase
 import com.saokt.taskmanager.domain.usecase.task.DeleteTaskUseCase
 import com.saokt.taskmanager.domain.usecase.task.GetTasksUseCase
-import com.saokt.taskmanager.domain.usecase.task.RescheduleTaskUseCase
-import com.saokt.taskmanager.domain.usecase.task.ResizeTaskScheduleUseCase
 import com.saokt.taskmanager.domain.usecase.task.ToggleTaskCompletionUseCase
 import com.saokt.taskmanager.domain.usecase.user.GetCurrentUserUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -35,7 +28,6 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.LocalDate
 import javax.inject.Inject
 
 @HiltViewModel
@@ -43,8 +35,6 @@ class TaskListViewModel @Inject constructor(
     private val getTasksUseCase: GetTasksUseCase,
     private val getProjectsUseCase: GetProjectsUseCase,
     private val deleteTaskUseCase: DeleteTaskUseCase,
-    private val rescheduleTaskUseCase: RescheduleTaskUseCase,
-    private val resizeTaskScheduleUseCase: ResizeTaskScheduleUseCase,
     private val toggleTaskCompletionUseCase: ToggleTaskCompletionUseCase,
     private val getCurrentUserUseCase: GetCurrentUserUseCase,
     private val taskPreferencesRepository: TaskPreferencesRepository
@@ -81,13 +71,11 @@ class TaskListViewModel @Inject constructor(
         viewModelScope.launch {
             taskPreferencesRepository.observeTaskListTimelineZoom().collectLatest { zoom ->
                 _state.update { it.copy(timelineZoom = zoom) }
-                recompute()
             }
         }
         viewModelScope.launch {
             taskPreferencesRepository.observeTaskListTimelineAnchor().collectLatest { anchorEpochDay ->
                 _state.update { it.copy(timelineAnchorEpochDay = anchorEpochDay) }
-                recompute()
             }
         }
     }
@@ -209,50 +197,6 @@ class TaskListViewModel @Inject constructor(
         }
     }
 
-    fun setTimelineZoom(zoom: TimelineZoom) {
-        _state.update { it.copy(timelineZoom = zoom) }
-        recompute()
-        viewModelScope.launch {
-            taskPreferencesRepository.saveTaskListTimelineZoom(zoom)
-        }
-    }
-
-    fun shiftTimelineAnchor(days: Long) {
-        val currentAnchor = _state.value.timelineAnchorDate ?: LocalDate.now()
-        val updatedAnchor = currentAnchor.plusDays(days)
-        updateTimelineAnchor(updatedAnchor)
-    }
-
-    fun jumpTimelineToToday() {
-        updateTimelineAnchor(LocalDate.now())
-    }
-
-    fun planTaskOnTimeline(task: Task) {
-        rescheduleTask(task, 0)
-    }
-
-    fun rescheduleTask(task: Task, deltaDays: Long) {
-        viewModelScope.launch {
-            val result = rescheduleTaskUseCase(task, deltaDays)
-            if (result.isFailure) {
-                _state.update {
-                    it.copy(error = result.exceptionOrNull()?.localizedMessage ?: "Failed to reschedule task")
-                }
-            }
-        }
-    }
-
-    fun resizeTaskSchedule(task: Task, edge: TimelineEdge, deltaDays: Long) {
-        viewModelScope.launch {
-            val result = resizeTaskScheduleUseCase(task, edge, deltaDays)
-            if (result.isFailure) {
-                _state.update {
-                    it.copy(error = result.exceptionOrNull()?.localizedMessage ?: "Failed to resize task")
-                }
-            }
-        }
-    }
-
     private fun updateQuery(transform: TaskListQuery.() -> TaskListQuery) {
         val updatedQuery = _state.value.activeQuery.transform()
         _state.update { it.copy(activeQuery = updatedQuery) }
@@ -269,45 +213,17 @@ class TaskListViewModel @Inject constructor(
             query = currentState.activeQuery,
             currentUserId = currentState.currentUser?.id
         )
-        val timeline = TaskTimelineEngine.build(
-            tasks = filteredTasks,
-            zoom = currentState.timelineZoom,
-            anchorDate = currentState.timelineAnchorDate,
-            canEditSchedule = ::canEditSchedule
-        )
         _state.update {
             it.copy(
                 tasks = filteredTasks,
                 filteredTaskCount = filteredTasks.size,
                 totalTaskCount = rawTasks.size,
-                hasActiveFilters = currentState.activeQuery.hasActiveFilters(),
-                timelineRange = timeline.range,
-                timelineItems = timeline.items,
-                unscheduledTasks = timeline.unscheduledTasks
+                hasActiveFilters = currentState.activeQuery.hasActiveFilters()
             )
         }
     }
 
     private fun shouldShowLoading(): Boolean = !hasLoadedTasks || !hasLoadedProjects
-
-    private fun updateTimelineAnchor(anchorDate: LocalDate) {
-        _state.update { it.copy(timelineAnchorEpochDay = anchorDate.toEpochDay()) }
-        recompute()
-        viewModelScope.launch {
-            taskPreferencesRepository.saveTaskListTimelineAnchor(anchorDate.toEpochDay())
-        }
-    }
-
-    private fun canEditSchedule(task: Task): Boolean {
-        val currentUserId = _state.value.currentUser?.id
-        val project = rawProjects.firstOrNull { it.id == task.projectId }
-        return TaskPermissionEvaluator.canMoveTask(
-            task = task,
-            currentUserId = currentUserId,
-            project = project,
-            members = project?.members.orEmpty()
-        )
-    }
 }
 
 data class TaskListState(
@@ -320,13 +236,7 @@ data class TaskListState(
     val viewMode: TaskListViewMode = TaskListViewMode.LIST,
     val timelineZoom: TimelineZoom = TimelineZoom.WEEK,
     val timelineAnchorEpochDay: Long? = null,
-    val timelineRange: TimelineRange? = null,
-    val timelineItems: List<TimelineItem> = emptyList(),
-    val unscheduledTasks: List<Task> = emptyList(),
     val filteredTaskCount: Int = 0,
     val totalTaskCount: Int = 0,
     val hasActiveFilters: Boolean = false
-) {
-    val timelineAnchorDate: LocalDate?
-        get() = timelineAnchorEpochDay?.let(LocalDate::ofEpochDay)
-}
+)

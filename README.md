@@ -1,45 +1,50 @@
 # Task Manager
 
-Android task and project management app built with Kotlin, Jetpack Compose, Room, Hilt, WorkManager, and Firebase.
+Task Manager is an Android productivity app for planning personal work and collaborative projects in one place. It combines task tracking, project workspaces, calendar planning, notifications, chat, and local-first sync in a Jetpack Compose app backed by Room and Firebase.
 
-This repository is set up so you can plug in your own Firebase project and run the app locally without committing secrets.
+This repo is being prepared as a polished portfolio project, so the setup is designed to be secret-safe: you can plug in your own Firebase project and run the app locally without committing credentials.
 
-## Features
+## What This Project Shows
+
+- End-to-end Android app development with Kotlin and Jetpack Compose
+- Local-first architecture with Room as the on-device source of truth
+- Firebase-backed authentication, sync, messaging, and collaboration flows
+- Multi-screen product design across dashboard, tasks, projects, calendar, profile, and notifications
+- Testing across unit, UI, and Firebase emulator integration flows
+
+## Feature Highlights
 
 - Email/password and Google sign-in
-- Dashboard with task and project overview
-- Project creation, editing, member invitations, and member management
-- Task creation, assignment, subtasks, start/due dates, milestone tasks, priority tracking, workflow status, kanban board support, and Gantt-style timeline planning
-- Advanced task filtering and sorting across status, assignment, priority, due date, and project
-- Calendar view for due-date planning
-- In-app notifications and notification settings
+- Personal dashboard with project and task summaries
+- Task creation, editing, assignment, priority, due dates, subtasks, and status tracking
+- Shared projects with member invitations and role-aware collaboration
+- Project task views in list, board, and timeline formats
+- Calendar planning for scheduled work
+- In-app notifications and notification preferences
 - Project and task chat
-- App widget for top tasks
-- Local Room persistence with background sync to Firebase
-
-## Architecture Notes
-
-- The app stays local-first: Room is the primary on-device source of truth, while Firebase listeners and sync workers reconcile remote changes back into local storage.
-- Task querying is implemented as derived state in the presentation/domain layer. Screens observe full task flows, then apply a shared `TaskListQuery` through a reusable task query engine for filtering, sorting, counts, and board grouping.
-- Workflow state is explicit through `TaskStatus` (`TODO`, `IN_PROGRESS`, `DONE`) and remains backward compatible with the legacy `completed` flag. Any task write path canonicalizes these fields so list, board, dashboard, calendar, widget, and sync behavior stay consistent.
-- Timeline planning is also derived state. Tasks now carry `startDate`, `dueDate`, and `TaskType` (`TASK`, `MILESTONE`), then a shared timeline engine normalizes them into bars, milestone markers, unscheduled buckets, and editable schedule ranges for both personal and project views.
-- UI state is kept in ViewModels. Composables render controls and invoke explicit events, but business rules like filtering, move permissions, and status synchronization stay outside the UI layer.
+- Home screen widget for top tasks
+- Background sync between Room and Firebase
 
 ## Screenshots
 
-- For open-source and portfolio presentation, prefer screenshots or short recordings that cover:
-- the filtered task list with active chips and counts
-- the project board view with todo / in progress / done columns
-- the project timeline / Gantt view with draggable task bars and milestone markers
-- the personal timeline view mixing personal and project work
-- task detail editing with workflow status controls
-- task detail editing with start date, due date, and milestone type
-- cross-screen consistency between dashboard, calendar, and project task views
+<table>
+  <tr>
+    <td align="center"><img src="homePage.jpg" alt="Dashboard" width="220" /><br />Dashboard overview</td>
+    <td align="center"><img src="tasks.jpg" alt="Tasks screen" width="220" /><br />Task list with filtering</td>
+    <td align="center"><img src="ProjectPgae.jpg" alt="Project board" width="220" /><br />Project board and filters</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="projectsList.jpg" alt="Projects screen" width="220" /><br />Project workspace list</td>
+    <td align="center"><img src="calender.jpg" alt="Calendar screen" width="220" /><br />Calendar planning view</td>
+    <td align="center"><img src="EditProject.jpg" alt="Edit project screen" width="220" /><br />Project editing flow</td>
+  </tr>
+</table>
 
 ## Tech Stack
 
 - Kotlin
 - Jetpack Compose
+- Material 3
 - Hilt
 - Room
 - WorkManager
@@ -47,6 +52,39 @@ This repository is set up so you can plug in your own Firebase project and run t
 - Cloud Firestore
 - Firebase Cloud Messaging
 - Glance App Widgets
+
+## Architecture At A Glance
+
+- `presentation/`: Compose screens, reusable UI components, navigation, and state-driven ViewModels
+- `domain/`: models plus shared query and timeline engines used across task and project screens
+- `data/local/`: Room database, DAOs, and entities
+- `data/remote/firebase/`: Firebase Auth and Firestore sources
+- `data/repository/`: local-first repositories that coordinate local persistence and remote sync
+
+Key design choices:
+
+- Local-first data flow: Room is the primary on-device source of truth, while Firebase listeners and sync workers reconcile remote changes into local storage.
+- Shared task querying: filtering, sorting, counts, and board grouping are centralized through a reusable task query model and engine instead of being duplicated per screen.
+- Shared timeline logic: scheduled and unscheduled tasks are normalized through a common timeline engine so personal and project planning views stay aligned.
+- ViewModel-owned state: composables stay focused on rendering and user events, while business rules live outside the UI layer.
+
+## Testing
+
+The project includes multiple layers of verification:
+
+- Unit tests for ViewModels, repositories, mappers, domain logic, and use cases
+- Instrumented Compose UI tests for screen behavior
+- Firebase emulator integration tests for auth and task flows
+
+Useful commands:
+
+```bash
+./gradlew :app:compileDebugKotlin
+./gradlew :app:testDebugUnitTest
+./gradlew :app:connectedDebugAndroidTest
+./scripts/run-firebase-auth-integration-tests.sh
+./scripts/run-firebase-task-integration-tests.sh
+```
 
 ## Local Setup
 
@@ -58,7 +96,7 @@ Set `ANDROID_HOME` to your Android SDK root, or create `local.properties` with:
 sdk.dir=/absolute/path/to/Android/sdk
 ```
 
-### 2. Firebase
+### 2. Firebase Config
 
 Copy the sample config and replace the placeholder values with your own Firebase Android app config:
 
@@ -66,17 +104,17 @@ Copy the sample config and replace the placeholder values with your own Firebase
 cp app/google-services.example.json app/google-services.json
 ```
 
-Important notes:
+Notes:
 
 - The Android package name is `com.saokt.taskmanager`
-- Google sign-in uses the generated Firebase `default_web_client_id`, so it will follow your own `google-services.json`
-- If Firebase config is missing, the app can still start in a limited local-only mode, but remote auth/sync features will not work correctly
+- Google Sign-In uses the generated Firebase `default_web_client_id`
+- If Firebase config is missing, the app can still start in a limited local-only mode, but remote auth and sync features will not work fully
 
 ### 3. Optional Release Signing
 
 Debug builds do not require release signing.
 
-If you want release builds:
+If you want to generate release builds:
 
 ```bash
 cp keystore.properties.example keystore.properties
@@ -84,7 +122,7 @@ cp keystore.properties.example keystore.properties
 
 Then point `storeFile` to a local keystore path that is not committed.
 
-### 4. Optional Firestore Email Update Script
+### 4. Optional Firestore Helper Script
 
 If you want to run the helper script under `update-firestore-emails/`:
 
@@ -92,61 +130,15 @@ If you want to run the helper script under `update-firestore-emails/`:
 cp update-firestore-emails/serviceAccountKey.example.json update-firestore-emails/serviceAccountKey.json
 ```
 
-## Run Verification
-
-```bash
-./gradlew :app:compileDebugKotlin
-./gradlew :app:testDebugUnitTest
-./gradlew :app:lintDebug
-```
-
-## Local UI Testing
-
-The project includes local emulator UI tests for the authentication flow using Jetpack Compose UI testing.
-
-Run the instrumented UI suite on a connected emulator or device:
-
-```bash
-./gradlew :app:connectedDebugAndroidTest
-```
-
-Useful outputs after the run:
-
-- HTML report: `app/build/reports/androidTests/connected/debug/index.html`
-- Device logs and raw results: `app/build/outputs/androidTest-results/connected/debug/`
-
-When a Compose UI test fails, the helper will save a screenshot PNG for that failure so an AI tool can inspect what the emulator displayed during the broken state.
-
-## Local Firebase Auth Integration Testing
-
-The repo can also run real Firebase Auth + Firestore integration tests against the local Firebase emulators.
-
-Run:
-
-```bash
-./scripts/run-firebase-auth-integration-tests.sh
-```
-
-That command will:
-
-- start the local Firebase Auth and Firestore emulators
-- run the Android instrumented tests with emulator wiring enabled
-- shut the Firebase emulators down when the run finishes
-
-## Open Source Notes
+## Repository Safety Notes
 
 - Do not commit `google-services.json`, `keystore.properties`, keystores, or service account keys
-- The repo includes example config files for local setup only
-- If you fork this project, create your own Firebase project and update auth, Firestore, and FCM to match your configuration
-- When extending task querying, start with the shared query model and engine under the task domain model package rather than adding ad hoc filtering in screens.
-- When extending board behavior, keep new status transitions and permission rules centralized in the ViewModel/domain layer so the list and board views stay aligned.
-- When extending timeline behavior, update the shared task timeline engine and scheduling use cases first so task detail, personal timeline, and project timeline stay behaviorally consistent.
+- Example config files are included for local setup only
+- If you fork the repo, create your own Firebase project and update auth, Firestore, and FCM configuration to match your setup
 
-## Current Focus
+## Why This Makes A Strong Portfolio Piece
 
-This repo is being cleaned up as an open-source portfolio project, with emphasis on:
-
-- reliable feature behavior
-- local onboarding
-- secret-free setup
-- better repo hygiene and documentation
+- It solves a real product problem across personal planning and team collaboration
+- It shows both UI craftsmanship and non-trivial app architecture
+- It includes offline-capable local persistence instead of a purely network-first demo
+- It demonstrates testing and environment setup, not just feature screenshots

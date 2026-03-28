@@ -6,11 +6,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -31,6 +34,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -49,11 +53,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.saokt.taskmanager.presentation.components.AppTopBar
 import com.saokt.taskmanager.presentation.components.HeroCard
 import com.saokt.taskmanager.presentation.components.InfoChip
 import com.saokt.taskmanager.presentation.navigation.Screen
@@ -91,7 +97,7 @@ fun SignUpScreen(
         onSignInClick = navController::navigateUp,
         onErrorShown = viewModel::clearError,
         onSignedUp = {
-            navController.navigate(Screen.Dashboard.route) {
+            navController.navigate(Screen.MainTabs.route) {
                 popUpTo(Screen.SignIn.route) { inclusive = true }
             }
         }
@@ -129,7 +135,7 @@ fun SignUpScreenContent(
 
     Scaffold(
         topBar = {
-            AppTopBar(
+            SignUpTopBar(
                 title = "Create account",
                 subtitle = "Set up your workspace once and keep momentum after that",
                 onBack = onSignInClick
@@ -157,8 +163,9 @@ fun SignUpScreenContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = AppTheme.screenPadding, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                    .padding(horizontal = AppTheme.screenPadding)
+                    .padding(top = 4.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(28.dp)
             ) {
                 HeroCard(
                     eyebrow = "Get started",
@@ -173,8 +180,8 @@ fun SignUpScreenContent(
                     elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(22.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        modifier = Modifier.padding(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 32.dp),
+                        verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
@@ -190,81 +197,83 @@ fun SignUpScreenContent(
                             )
                         }
 
-                        OutlinedTextField(
-                            value = state.displayName,
-                            onValueChange = onDisplayNameChanged,
-                            label = { Text("Full name") },
-                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
-                            shape = RoundedCornerShape(18.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag(SignUpTestTags.DISPLAY_NAME_FIELD)
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                            OutlinedTextField(
+                                value = state.displayName,
+                                onValueChange = onDisplayNameChanged,
+                                label = { Text("Full name") },
+                                leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag(SignUpTestTags.DISPLAY_NAME_FIELD)
+                            )
 
-                        OutlinedTextField(
-                            value = state.email,
-                            onValueChange = onEmailChanged,
-                            label = { Text("Email") },
-                            leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-                            shape = RoundedCornerShape(18.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag(SignUpTestTags.EMAIL_FIELD)
-                        )
+                            OutlinedTextField(
+                                value = state.email,
+                                onValueChange = onEmailChanged,
+                                label = { Text("Email") },
+                                leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag(SignUpTestTags.EMAIL_FIELD)
+                            )
 
-                        OutlinedTextField(
-                            value = state.password,
-                            onValueChange = onPasswordChanged,
-                            label = { Text("Password") },
-                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                IconButton(
-                                    onClick = { passwordVisible = !passwordVisible },
-                                    modifier = Modifier.testTag(SignUpTestTags.PASSWORD_TOGGLE)
-                                ) {
-                                    Icon(
-                                        imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = if (passwordVisible) "Hide password" else "Show password"
-                                    )
-                                }
-                            },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
-                            shape = RoundedCornerShape(18.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag(SignUpTestTags.PASSWORD_FIELD)
-                        )
+                            OutlinedTextField(
+                                value = state.password,
+                                onValueChange = onPasswordChanged,
+                                label = { Text("Password") },
+                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(
+                                        onClick = { passwordVisible = !passwordVisible },
+                                        modifier = Modifier.testTag(SignUpTestTags.PASSWORD_TOGGLE)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = if (passwordVisible) "Hide password" else "Show password"
+                                        )
+                                    }
+                                },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag(SignUpTestTags.PASSWORD_FIELD)
+                            )
 
-                        OutlinedTextField(
-                            value = state.confirmPassword,
-                            onValueChange = onConfirmPasswordChanged,
-                            label = { Text("Confirm password") },
-                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                            visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                            trailingIcon = {
-                                IconButton(
-                                    onClick = { confirmPasswordVisible = !confirmPasswordVisible },
-                                    modifier = Modifier.testTag(SignUpTestTags.CONFIRM_PASSWORD_TOGGLE)
-                                ) {
-                                    Icon(
-                                        imageVector = if (confirmPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                        contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password"
-                                    )
-                                }
-                            },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                            shape = RoundedCornerShape(18.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag(SignUpTestTags.CONFIRM_PASSWORD_FIELD)
-                        )
+                            OutlinedTextField(
+                                value = state.confirmPassword,
+                                onValueChange = onConfirmPasswordChanged,
+                                label = { Text("Confirm password") },
+                                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                                visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(
+                                        onClick = { confirmPasswordVisible = !confirmPasswordVisible },
+                                        modifier = Modifier.testTag(SignUpTestTags.CONFIRM_PASSWORD_TOGGLE)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (confirmPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password"
+                                        )
+                                    }
+                                },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag(SignUpTestTags.CONFIRM_PASSWORD_FIELD)
+                            )
+                        }
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             InfoChip(label = "Free to start")
@@ -319,6 +328,56 @@ fun SignUpScreenContent(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+        }
+    }
+}
+
+/** Sign-up header without [TopAppBar] min-height / extra top padding. */
+@Composable
+private fun SignUpTopBar(
+    title: String,
+    subtitle: String,
+    onBack: () -> Unit
+) {
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(start = 4.dp, end = 12.dp, top = 2.dp, bottom = 18.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back"
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge.copy(lineHeight = 28.sp),
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }
