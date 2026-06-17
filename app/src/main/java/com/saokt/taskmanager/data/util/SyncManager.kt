@@ -53,7 +53,6 @@ class SyncManager @Inject constructor(
             }
         }
     }
-
     // Schedule background periodic sync
     fun schedulePeriodicSync() {
         val constraints = Constraints.Builder()

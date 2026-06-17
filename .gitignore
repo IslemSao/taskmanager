@@ -18,6 +18,7 @@ app/google-services.json
 keystore.properties
 release-key.keystore
 *.keystore
+*.p12
 update-firestore-emails/serviceAccountKey.json
 update-firestore-emails/node_modules/
 .idea/

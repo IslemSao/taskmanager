@@ -1,5 +1,4 @@
 import java.util.Properties
-import java.io.FileInputStream
 
 plugins {
     alias(libs.plugins.android.application)
@@ -11,20 +10,39 @@ plugins {
 
 val googleServicesJson = file("google-services.json")
 
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+fun String?.nonBlankOrNull(): String? = this?.takeIf { it.isNotBlank() }
+
+val releaseKeystoreFile =
+    if (keystorePropertiesFile.exists()) {
+        rootProject.file(keystoreProperties.getProperty("storeFile", "release-key.keystore"))
+    } else {
+        null
+    }
+
+val releaseSigningReady =
+    releaseKeystoreFile != null &&
+        releaseKeystoreFile.isFile &&
+        keystoreProperties.getProperty("storePassword").nonBlankOrNull() != null &&
+        keystoreProperties.getProperty("keyAlias").nonBlankOrNull() != null &&
+        keystoreProperties.getProperty("keyPassword").nonBlankOrNull() != null
+
 android {
     namespace = "com.saokt.taskmanager"
     compileSdk = 35
 
     signingConfigs {
         create("release") {
-            val keystorePropertiesFile = rootProject.file("keystore.properties")
-            val keystoreProperties = Properties()
-            if (keystorePropertiesFile.exists()) {
-                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-                storeFile = rootProject.file(keystoreProperties["storeFile"] ?: "release-key.keystore")
-                storePassword = keystoreProperties["storePassword"] as String?
-                keyAlias = keystoreProperties["keyAlias"] as String?
-                keyPassword = keystoreProperties["keyPassword"] as String?
+            if (releaseSigningReady) {
+                storeFile = releaseKeystoreFile
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
             }
         }
     }
@@ -33,8 +51,8 @@ android {
         applicationId = "com.saokt.taskmanager"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 6
+        versionName = "1.4"
 
         testInstrumentationRunner = "com.saokt.taskmanager.testing.TaskManagerTestRunner"
     }
@@ -46,7 +64,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
@@ -76,6 +96,7 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
 
     implementation("com.google.firebase:firebase-messaging-ktx")
+    implementation("com.google.firebase:firebase-config-ktx")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.firebase.auth.ktx)
@@ -158,4 +179,32 @@ dependencies {
 // Allow references to generated code
 kapt {
     correctErrorTypes = true
+}
+
+afterEvaluate {
+    val signingSetupMessage =
+        """
+        Release signing is not configured (Play uploads need a real upload key).
+
+        1) Copy keystore.properties.example to keystore.properties in the project root.
+        2) Set storeFile to your upload keystore path, and set storePassword, keyAlias, keyPassword.
+
+        Expected keystore file: ${releaseKeystoreFile?.absolutePath ?: "(keystore.properties missing)"}
+        """.trimIndent()
+
+    // Fail before packaging/signing so we never produce a debug-signed "release" artifact by mistake.
+    tasks.named("packageRelease").configure {
+        doFirst {
+            if (!releaseSigningReady) {
+                throw GradleException(signingSetupMessage)
+            }
+        }
+    }
+    tasks.named("signReleaseBundle").configure {
+        doFirst {
+            if (!releaseSigningReady) {
+                throw GradleException(signingSetupMessage)
+            }
+        }
+    }
 }

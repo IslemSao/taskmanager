@@ -100,11 +100,20 @@ fun SignInScreen(
             val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
             try {
                 val account = task.getResult(ApiException::class.java)
-                account?.idToken?.let { token -> viewModel.signInWithGoogle(token) }
+                val idToken = account?.idToken
+                if (idToken.isNullOrBlank()) {
+                    Log.w(TAG, "Google sign-in returned no ID token.")
+                    viewModel.setError("Google sign-in did not return an ID token.")
+                } else {
+                    viewModel.signInWithGoogle(idToken)
+                }
             } catch (e: ApiException) {
                 Log.e(TAG, "Google sign-in failed", e)
                 viewModel.setError("Google sign-in failed: ${e.statusCode}")
             }
+        } else {
+            Log.w(TAG, "Google sign-in was cancelled or failed before returning an account.")
+            viewModel.setError("Google sign-in was cancelled.")
         }
     }
 
@@ -115,16 +124,24 @@ fun SignInScreen(
         onSignInClick = viewModel::signIn,
         onForgotPasswordClick = viewModel::sendPasswordResetEmail,
         onGoogleSignInClick = {
+            Log.d(TAG, "Google sign-in button clicked")
             val webClientId = FirebaseConfig.getGoogleWebClientId(context)
             if (webClientId.isNullOrBlank()) {
+                Log.w(TAG, "Google sign-in cannot start because default_web_client_id is missing.")
                 viewModel.setError("Google sign-in is not configured for this build.")
             } else {
-                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                    .requestIdToken(webClientId)
-                    .requestEmail()
-                    .build()
-                val googleSignInClient = GoogleSignIn.getClient(context, gso)
-                launcher.launch(googleSignInClient.signInIntent)
+                try {
+                    val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                        .requestIdToken(webClientId)
+                        .requestEmail()
+                        .build()
+                    val googleSignInClient = GoogleSignIn.getClient(context, gso)
+                    Log.d(TAG, "Launching Google sign-in intent")
+                    launcher.launch(googleSignInClient.signInIntent)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to launch Google sign-in", e)
+                    viewModel.setError("Unable to start Google sign-in.")
+                }
             }
         },
         onSignUpClick = { navController.navigate(Screen.SignUp.route) },
